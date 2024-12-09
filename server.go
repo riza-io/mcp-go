@@ -106,11 +106,25 @@ type serverConfig struct {
 	interceptors []Interceptor
 }
 
-func Listen(ctx context.Context, r io.Reader, w io.Writer, srv Server, opts ...Option) error {
+type StdioServer struct {
+	cfg *serverConfig
+	srv Server
+}
+
+func NewStdioServer(srv Server, opts ...Option) *StdioServer {
 	cfg := &serverConfig{}
 	for _, opt := range opts {
 		opt.applyToServer(cfg)
 	}
+	return &StdioServer{
+		cfg: cfg,
+		srv: srv,
+	}
+}
+
+func (s StdioServer) Listen(ctx context.Context, r io.Reader, w io.Writer) error {
+	cfg := s.cfg
+	srv := s.srv
 
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {

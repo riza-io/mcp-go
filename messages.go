@@ -43,11 +43,21 @@ type ServerInfo struct {
 
 // Capabilities represents the available feature capabilities
 type ServerCapabilities struct {
-	Logging *Logging `json:"logging,omitempty"`
-	Tools   *Tools   `json:"tools,omitempty"`
+	Logging   *Logging   `json:"logging,omitempty"`
+	Tools     *Tools     `json:"tools,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
+	Prompts   *Prompts   `json:"prompts,omitempty"`
 }
 
 type Logging struct{}
+
+type Prompts struct {
+	ListChanged bool `json:"listChanged,omitempty"`
+}
+
+type Resources struct {
+	ListChanged bool `json:"listChanged,omitempty"`
+}
 
 type Tools struct {
 	ListChanged bool `json:"listChanged,omitempty"`
