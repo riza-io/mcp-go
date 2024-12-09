@@ -41,9 +41,10 @@ func TestEndToEnd(t *testing.T) {
 	stdoutr, stdoutw := io.Pipe()
 
 	client := mcp.NewStdioClient(stdinr, stdoutw)
+	srv := mcp.NewStdioServer(&server{}, mcp.WithInterceptors(loggingInterceptor))
 
 	go func() {
-		if err := mcp.Listen(ctx, stdoutr, stdinw, &server{}, mcp.WithInterceptors(loggingInterceptor)); err != nil {
+		if err := srv.Listen(ctx, stdoutr, stdinw); err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
 	}()
