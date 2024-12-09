@@ -19,49 +19,80 @@ exposes the contents of a `io.FS` as resources.
 package main
 
 import (
-  "context"
-  "log"
-  "net/http"
+	"context"
+	"flag"
+	"io/fs"
+	"log"
+	"mime"
+	"os"
+	"path/filepath"
 
-  "connectrpc.com/connect"
-  pingv1 "connectrpc.com/connect/internal/gen/connect/ping/v1"
-  "connectrpc.com/connect/internal/gen/connect/ping/v1/pingv1connect"
-  "golang.org/x/net/http2"
-  "golang.org/x/net/http2/h2c"
+	"github.com/riza-io/mcp-go"
 )
 
-type PingServer struct {
-  pingv1connect.UnimplementedPingServiceHandler // returns errors from all methods
+type FSServer struct {
+	fs fs.FS
+
+	mcp.UnimplementedServer
 }
 
-func (ps *PingServer) Ping(
-  ctx context.Context,
-  req *connect.Request[pingv1.PingRequest],
-) (*connect.Response[pingv1.PingResponse], error) {
-  // connect.Request and connect.Response give you direct access to headers and
-  // trailers. No context-based nonsense!
-  log.Println(req.Header().Get("Some-Header"))
-  res := connect.NewResponse(&pingv1.PingResponse{
-    // req.Msg is a strongly-typed *pingv1.PingRequest, so we can access its
-    // fields without type assertions.
-    Number: req.Msg.Number,
-  })
-  res.Header().Set("Some-Other-Header", "hello!")
-  return res, nil
+func (s *FSServer) Initialize(ctx context.Context, req *mcp.Request[mcp.InitializeRequest]) (*mcp.Response[mcp.InitializeResponse], error) {
+	return mcp.NewResponse(&mcp.InitializeResponse{
+		ProtocolVersion: req.Params.ProtocolVersion,
+		Capabilities: mcp.ServerCapabilities{
+			Resources: &mcp.Resources{},
+		},
+	}), nil
+}
+
+func (s *FSServer) ListResources(ctx context.Context, req *mcp.Request[mcp.ListResourcesRequest]) (*mcp.Response[mcp.ListResourcesResponse], error) {
+	var resources []mcp.Resource
+	fs.WalkDir(s.fs, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		resources = append(resources, mcp.Resource{
+			URI:      "file://" + path,
+			Name:     d.Name(),
+			MimeType: mime.TypeByExtension(filepath.Ext(path)),
+		})
+		return nil
+	})
+	return mcp.NewResponse(&mcp.ListResourcesResponse{
+		Resources: resources,
+	}), nil
+}
+
+func (s *FSServer) ReadResource(ctx context.Context, req *mcp.Request[mcp.ReadResourceRequest]) (*mcp.Response[mcp.ReadResourceResponse], error) {
+	contents, err := fs.ReadFile(s.fs, req.Params.URI)
+	if err != nil {
+		return nil, err
+	}
+	return mcp.NewResponse(&mcp.ReadResourceResponse{
+		Contents: []mcp.ResourceContent{
+			{
+				URI:      req.Params.URI,
+				MimeType: mime.TypeByExtension(filepath.Ext(req.Params.URI)),
+				Text:     string(contents), // TODO: base64 encode
+			},
+		},
+	}), nil
 }
 
 func main() {
-  mux := http.NewServeMux()
-  // The generated constructors return a path and a plain net/http
-  // handler.
-  mux.Handle(pingv1connect.NewPingServiceHandler(&PingServer{}))
-  err := http.ListenAndServe(
-    "localhost:8080",
-    // For gRPC clients, it's convenient to support HTTP/2 without TLS. You can
-    // avoid x/net/http2 by using http.ListenAndServeTLS.
-    h2c.NewHandler(mux, &http2.Server{}),
-  )
-  log.Fatalf("listen failed: %v", err)
+	root := flag.String("root", "/", "root directory")
+	flag.Parse()
+
+	server := mcp.NewStdioServer(&FSServer{
+		fs: os.DirFS(*root),
+	})
+
+	if err := server.Listen(context.Background(), os.Stdin, os.Stdout); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
