@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
 
 	"github.com/riza-io/mcp-go/internal/jsonrpc"
@@ -62,26 +61,52 @@ func (s *UnimplementedServer) Completion(ctx context.Context, req *Request[Compl
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func process[T, V any](ctx context.Context, msg jsonrpc.Request, params *T, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) (any, error) {
+func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Request, params *T, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) (any, error) {
+	var interceptor Interceptor
+	if len(cfg.interceptors) > 0 {
+		interceptor = newStack(cfg.interceptors)
+	} else {
+		interceptor = UnaryInterceptorFunc(
+			func(next UnaryFunc) UnaryFunc {
+				return UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {
+					return next(ctx, request)
+				})
+			},
+		)
+	}
+
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return nil, err
 	}
 	req := NewRequest(params)
 	req.id = msg.ID.String()
 	req.method = msg.Method
-	resp, rerr := method(ctx, req)
-	if rerr != nil {
-		return nil, rerr
+
+	inner := UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {
+		req := request.(*Request[T])
+		resp, rerr := method(ctx, req)
+		if rerr != nil {
+			return nil, rerr
+		}
+		resp.id = req.id
+		return resp, nil
+	})
+
+	rr, err := interceptor.WrapUnary(inner)(ctx, req)
+	if err != nil {
+		return nil, err
 	}
-	resp.id = req.id
+
+	resp := rr.(*Response[V])
 	return resp.Result, nil
+
 }
 
 type serverConfig struct {
 	interceptors []Interceptor
 }
 
-func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, srv Server, opts ...Option) error {
+func Listen(ctx context.Context, r io.Reader, w io.Writer, srv Server, opts ...Option) error {
 	cfg := &serverConfig{}
 	for _, opt := range opts {
 		opt.applyToServer(cfg)
@@ -94,14 +119,8 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 
 		var msg jsonrpc.Request
 		if err := dec.Decode(&msg); err != nil {
-			logger.Error("decode", "err", err)
 			continue
 		}
-
-		logger = logger.With(
-			"id", string(msg.ID),
-			"method", msg.Method,
-		)
 
 		var result any
 		var err error
@@ -110,31 +129,31 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 		switch msg.Method {
 		case "initialize":
 			params := &InitializeRequest{}
-			result, err = process(ctx, msg, params, srv.Initialize)
+			result, err = process(ctx, cfg, msg, params, srv.Initialize)
 		case "completion/complete":
 			params := &CompletionRequest{}
-			result, err = process(ctx, msg, params, srv.Completion)
+			result, err = process(ctx, cfg, msg, params, srv.Completion)
 		case "tools/list":
 			params := &ListToolsRequest{}
-			result, err = process(ctx, msg, params, srv.ListTools)
+			result, err = process(ctx, cfg, msg, params, srv.ListTools)
 		case "tools/call":
 			params := &CallToolRequest{}
-			result, err = process(ctx, msg, params, srv.CallTool)
+			result, err = process(ctx, cfg, msg, params, srv.CallTool)
 		case "prompts/list":
 			params := &ListPromptsRequest{}
-			result, err = process(ctx, msg, params, srv.ListPrompts)
+			result, err = process(ctx, cfg, msg, params, srv.ListPrompts)
 		case "prompts/get":
 			params := &GetPromptRequest{}
-			result, err = process(ctx, msg, params, srv.GetPrompt)
+			result, err = process(ctx, cfg, msg, params, srv.GetPrompt)
 		case "resources/list":
 			params := &ListResourcesRequest{}
-			result, err = process(ctx, msg, params, srv.ListResources)
+			result, err = process(ctx, cfg, msg, params, srv.ListResources)
 		case "resources/read":
 			params := &ReadResourceRequest{}
-			result, err = process(ctx, msg, params, srv.ReadResource)
+			result, err = process(ctx, cfg, msg, params, srv.ReadResource)
 		case "resources/templates/list":
 			params := &ListResourceTemplatesRequest{}
-			result, err = process(ctx, msg, params, srv.ListResourceTemplates)
+			result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
 		default:
 			if msg.ID == "" {
 				// Ignore notifications
@@ -146,7 +165,6 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 
 		var resp jsonrpc.Response
 		if err != nil {
-			logger.Error("request", "code", 1, "err", err)
 			resp = jsonrpc.Response{
 				ID:      msg.ID,
 				JsonRPC: msg.JsonRPC,
@@ -156,7 +174,6 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 				},
 			}
 		} else {
-			logger.Info("request")
 			rawresult, err := json.Marshal(result)
 			if err != nil {
 				return err
@@ -177,7 +194,6 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 	}
 
 	if err := scanner.Err(); err != nil {
-		logger.Error("scan", "err", err)
 		return err
 	}
 	return nil

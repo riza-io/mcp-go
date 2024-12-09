@@ -48,7 +48,7 @@ func NewStdioClient(stdin io.Reader, stdout io.Writer, opts ...Option) Client {
 	return c
 }
 
-func callUnary[P any, R any](ctx context.Context, c *StdioClient, method string, req *Request[P]) (*Response[R], error) {
+func clientCallUnary[P any, R any](ctx context.Context, c *StdioClient, method string, req *Request[P]) (*Response[R], error) {
 	// Ensure that we are not sending multiple requests at the same time
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -132,37 +132,37 @@ func callUnary[P any, R any](ctx context.Context, c *StdioClient, method string,
 }
 
 func (c *StdioClient) Initialize(ctx context.Context, request *Request[InitializeRequest]) (*Response[InitializeResponse], error) {
-	return callUnary[InitializeRequest, InitializeResponse](ctx, c, "initialize", request)
+	return clientCallUnary[InitializeRequest, InitializeResponse](ctx, c, "initialize", request)
 }
 
 func (c *StdioClient) ListResources(ctx context.Context, request *Request[ListResourcesRequest]) (*Response[ListResourcesResponse], error) {
-	return callUnary[ListResourcesRequest, ListResourcesResponse](ctx, c, "resources/list", request)
+	return clientCallUnary[ListResourcesRequest, ListResourcesResponse](ctx, c, "resources/list", request)
 }
 
 func (c *StdioClient) ListTools(ctx context.Context, request *Request[ListToolsRequest]) (*Response[ListToolsResponse], error) {
-	return callUnary[ListToolsRequest, ListToolsResponse](ctx, c, "tools/list", request)
+	return clientCallUnary[ListToolsRequest, ListToolsResponse](ctx, c, "tools/list", request)
 }
 
 func (c *StdioClient) CallTool(ctx context.Context, request *Request[CallToolRequest]) (*Response[CallToolResponse], error) {
-	return callUnary[CallToolRequest, CallToolResponse](ctx, c, "tools/call", request)
+	return clientCallUnary[CallToolRequest, CallToolResponse](ctx, c, "tools/call", request)
 }
 
 func (c *StdioClient) ListPrompts(ctx context.Context, request *Request[ListPromptsRequest]) (*Response[ListPromptsResponse], error) {
-	return callUnary[ListPromptsRequest, ListPromptsResponse](ctx, c, "prompts/list", request)
+	return clientCallUnary[ListPromptsRequest, ListPromptsResponse](ctx, c, "prompts/list", request)
 }
 
 func (c *StdioClient) GetPrompt(ctx context.Context, request *Request[GetPromptRequest]) (*Response[GetPromptResponse], error) {
-	return callUnary[GetPromptRequest, GetPromptResponse](ctx, c, "prompts/get", request)
+	return clientCallUnary[GetPromptRequest, GetPromptResponse](ctx, c, "prompts/get", request)
 }
 
 func (c *StdioClient) ReadResource(ctx context.Context, request *Request[ReadResourceRequest]) (*Response[ReadResourceResponse], error) {
-	return callUnary[ReadResourceRequest, ReadResourceResponse](ctx, c, "resources/read", request)
+	return clientCallUnary[ReadResourceRequest, ReadResourceResponse](ctx, c, "resources/read", request)
 }
 
 func (c *StdioClient) ListResourceTemplates(ctx context.Context, request *Request[ListResourceTemplatesRequest]) (*Response[ListResourceTemplatesResponse], error) {
-	return callUnary[ListResourceTemplatesRequest, ListResourceTemplatesResponse](ctx, c, "resources/templates/list", request)
+	return clientCallUnary[ListResourceTemplatesRequest, ListResourceTemplatesResponse](ctx, c, "resources/templates/list", request)
 }
 
 func (c *StdioClient) Completion(ctx context.Context, request *Request[CompletionRequest]) (*Response[CompletionResponse], error) {
-	return callUnary[CompletionRequest, CompletionResponse](ctx, c, "completion", request)
+	return clientCallUnary[CompletionRequest, CompletionResponse](ctx, c, "completion", request)
 }

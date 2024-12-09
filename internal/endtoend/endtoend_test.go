@@ -3,7 +3,6 @@ package endtoend
 import (
 	"context"
 	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/riza-io/mcp-go"
@@ -41,10 +40,10 @@ func TestEndToEnd(t *testing.T) {
 	stdinr, stdinw := io.Pipe()
 	stdoutr, stdoutw := io.Pipe()
 
-	client := mcp.NewStdioClient(stdinr, stdoutw, mcp.WithInterceptors(loggingInterceptor))
+	client := mcp.NewStdioClient(stdinr, stdoutw)
 
 	go func() {
-		if err := mcp.Listen(ctx, stdoutr, stdinw, slog.Default(), &server{}, mcp.WithInterceptors(loggingInterceptor)); err != nil {
+		if err := mcp.Listen(ctx, stdoutr, stdinw, &server{}, mcp.WithInterceptors(loggingInterceptor)); err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
 	}()
