@@ -9,20 +9,15 @@ type Request struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-type Response[T any] struct {
-	ID      json.Number `json:"id"`
-	JsonRPC string      `json:"jsonrpc"`
-	Result  T           `json:"result,omitempty"`
+type Response struct {
+	ID      json.Number     `json:"id"`
+	JsonRPC string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *ErrorDetail    `json:"error,omitempty"`
 }
 
-type Error[T any] struct {
-	ID      json.Number    `json:"id"`
-	JsonRPC string         `json:"jsonrpc"`
-	Error   ErrorDetail[T] `json:"error"`
-}
-
-type ErrorDetail[T any] struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    T      `json:"data"`
+type ErrorDetail struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
 }

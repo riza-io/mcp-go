@@ -68,14 +68,25 @@ func process[T, V any](ctx context.Context, msg jsonrpc.Request, params *T, meth
 	}
 	req := NewRequest(params)
 	req.id = msg.ID.String()
+	req.method = msg.Method
 	resp, rerr := method(ctx, req)
 	if rerr != nil {
 		return nil, rerr
 	}
+	resp.id = req.id
 	return resp.Result, nil
 }
 
-func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, srv Server) error {
+type serverConfig struct {
+	interceptors []Interceptor
+}
+
+func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, srv Server, opts ...Option) error {
+	cfg := &serverConfig{}
+	for _, opt := range opts {
+		opt.applyToServer(cfg)
+	}
+
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -87,8 +98,14 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 			continue
 		}
 
+		logger = logger.With(
+			"id", string(msg.ID),
+			"method", msg.Method,
+		)
+
 		var result any
 		var err error
+		code := 9
 
 		switch msg.Method {
 		case "initialize":
@@ -123,31 +140,31 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 				// Ignore notifications
 				continue
 			}
-			err = fmt.Errorf("unsupported method: %s", msg.Method)
+			code = -32601
+			err = fmt.Errorf("unknown method: %s", msg.Method)
 		}
 
-		logger.Info("rpc",
-			"method", msg.Method,
-			"params", msg.Params,
-			"result", result,
-			"error", err,
-		)
-
-		var resp any
+		var resp jsonrpc.Response
 		if err != nil {
-			resp = jsonrpc.Error[any]{
+			logger.Error("request", "code", 1, "err", err)
+			resp = jsonrpc.Response{
 				ID:      msg.ID,
 				JsonRPC: msg.JsonRPC,
-				Error: jsonrpc.ErrorDetail[any]{
-					Code:    1,
+				Error: &jsonrpc.ErrorDetail{
+					Code:    code,
 					Message: err.Error(),
 				},
 			}
 		} else {
-			resp = jsonrpc.Response[any]{
+			logger.Info("request")
+			rawresult, err := json.Marshal(result)
+			if err != nil {
+				return err
+			}
+			resp = jsonrpc.Response{
 				ID:      msg.ID,
 				JsonRPC: msg.JsonRPC,
-				Result:  result,
+				Result:  rawresult,
 			}
 		}
 
@@ -156,7 +173,6 @@ func Listen(ctx context.Context, r io.Reader, w io.Writer, logger *slog.Logger, 
 			return err
 		}
 
-		logger.Info("rpc", "response", string(bs))
 		fmt.Fprintln(w, string(bs))
 	}
 
