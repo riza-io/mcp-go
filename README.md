@@ -5,8 +5,7 @@ MCP Go SDK
 [![Go Report Card](https://goreportcard.com/badge/github.com/riza-io/mcp-go?cache)](https://goreportcard.com/report/github.com/riza-io/mcp-go)
 [![GoDoc](https://pkg.go.dev/badge/github.com/riza-io/mcp-go.svg)](https://pkg.go.dev/github.com/riza-io/mcp-go)
 
-
-Go implementation of the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), providing both client and server capabilities for integrating with LLM surfaces.
+A Go implementation of the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), providing both client and server capabilities for integrating with LLM surfaces.
 
 ## Overview
 
@@ -20,7 +19,7 @@ The Model Context Protocol allows applications to provide context for LLMs in a 
 ## A small example
 
 Curious what all this looks like in practice? Here's an example server that
-exposes the contents of a `io.FS` as resources.
+exposes the contents of an `io.FS` as resources.
 
 ```go
 package main
@@ -108,7 +107,7 @@ func main() {
 }
 ```
 
-This example can be compiled and wired up to Claude Desktop (or any other MCP client).
+You can compile this example and wire it up to Claude Desktop (or any other MCP client).
 
 ```json
 {
@@ -131,7 +130,7 @@ This example can be compiled and wired up to Claude Desktop (or any other MCP cl
 
 ## Roadmap
 
-The majority of the base protocol has been implemented. The following features are on our roadmap:
+The majority of the base protocol is implemented. The following features are on our roadmap:
 
 - Notifications
 - Sampling
@@ -139,4 +138,4 @@ The majority of the base protocol has been implemented. The following features a
 
 ## Legal
 
-Offered under the [MIT license][license].
+Offered under the [MIT license](LICENSE).
