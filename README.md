@@ -1,7 +1,7 @@
 mcp-go
 =======
 
-[![Build](https://github.com/riza-io/mcp-go/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/riza-io/mcp-go/actions/workflows/ci.yaml)
+[![Build](https://github.com/riza-io/mcp-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/riza-io/mcp-go/actions/workflows/ci.yml)
 [![Report Card](https://goreportcard.com/badge/github.com/riza-io/mcp-go)](https://goreportcard.com/report/github.com/riza-io/mcp-go)
 [![GoDoc](https://pkg.go.dev/badge/github.com/riza-io/mcp-go.svg)](https://pkg.go.dev/github.com/riza-io/mcp-go)
 
