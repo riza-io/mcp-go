@@ -1,14 +1,21 @@
-mcp-go
-=======
+MCP Go SDK
+==========
 
 [![Build](https://github.com/riza-io/mcp-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/riza-io/mcp-go/actions/workflows/ci.yml)
 [![Report Card](https://goreportcard.com/badge/github.com/riza-io/mcp-go)](https://goreportcard.com/report/github.com/riza-io/mcp-go)
 [![GoDoc](https://pkg.go.dev/badge/github.com/riza-io/mcp-go.svg)](https://pkg.go.dev/github.com/riza-io/mcp-go)
 
-mcp-go is a Go implementation of the [Model Context
-Protocol](https://modelcontextprotocol.io/introduction). The client and server
-support resources, prompts and tools. Support for sampling and roots in on the
-roadmap.
+
+Go implementation of the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), providing both client and server capabilities for integrating with LLM surfaces.
+
+## Overview
+
+The Model Context Protocol allows applications to provide context for LLMs in a standardized way, separating the concerns of providing context from the actual LLM interaction. This Go SDK implements the full MCP specification, making it easy to:
+
+- Build MCP clients that can connect to any MCP server
+- Create MCP servers that expose resources, prompts and tools
+- Use standard transports like stdio and SSE (coming soon)
+- Handle all MCP protocol messages and lifecycle events
 
 ## A small example
 
@@ -115,6 +122,12 @@ This example can be compiled and wired up to Claude Desktop (or any other MCP cl
 	}
 }
 ```
+
+## Documentation
+
+- [Model Context Protocol documentation](https://modelcontextprotocol.io)
+- [MCP Specification](https://spec.modelcontextprotocol.io)
+- [Example Servers](https://github.com/riza-io/mcp-go/tree/main/examples)
 
 ## Roadmap
 
