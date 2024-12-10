@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/riza-io/mcp-go"
 )
@@ -53,11 +52,16 @@ func (s *WeatherServer) CallTool(ctx context.Context, req *mcp.Request[mcp.CallT
 		return nil, err
 	}
 
+	text, err := json.MarshalIndent(forecasts, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
 	return mcp.NewResponse(&mcp.CallToolResponse{
 		Content: []mcp.Content{
 			{
 				Type: "text",
-				Text: fmt.Sprintf("Forecast for %s for the next %d days:\n%v", args.City, args.Days, forecasts),
+				Text: string(text),
 			},
 		},
 	}), nil

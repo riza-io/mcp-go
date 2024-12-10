@@ -33,7 +33,8 @@ func main() {
 	}
 
 	server := mcp.NewStdioServer(&WeatherServer{
-		key: os.Getenv("OPENWEATHER_API_KEY"),
+		defaultCity: "London",
+		key:         os.Getenv("OPENWEATHER_API_KEY"),
 	})
 
 	if err := server.Listen(ctx, os.Stdin, os.Stdout); err != nil {
