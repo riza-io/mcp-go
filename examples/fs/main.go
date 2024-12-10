@@ -8,6 +8,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/riza-io/mcp-go"
 )
@@ -38,7 +39,7 @@ func (s *FSServer) ListResources(ctx context.Context, req *mcp.Request[mcp.ListR
 		}
 		resources = append(resources, mcp.Resource{
 			URI:      "file://" + path,
-			Name:     d.Name(),
+			Name:     path,
 			MimeType: mime.TypeByExtension(filepath.Ext(path)),
 		})
 		return nil
@@ -49,7 +50,7 @@ func (s *FSServer) ListResources(ctx context.Context, req *mcp.Request[mcp.ListR
 }
 
 func (s *FSServer) ReadResource(ctx context.Context, req *mcp.Request[mcp.ReadResourceRequest]) (*mcp.Response[mcp.ReadResourceResponse], error) {
-	contents, err := fs.ReadFile(s.fs, req.Params.URI)
+	contents, err := fs.ReadFile(s.fs, strings.TrimPrefix(req.Params.URI, "file://"))
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +66,15 @@ func (s *FSServer) ReadResource(ctx context.Context, req *mcp.Request[mcp.ReadRe
 }
 
 func main() {
-	root := flag.String("root", "/", "root directory")
 	flag.Parse()
 
+	root := flag.Arg(0)
+	if root == "" {
+		root = "/"
+	}
+
 	server := mcp.NewStdioServer(&FSServer{
-		fs: os.DirFS(*root),
+		fs: os.DirFS(root),
 	})
 
 	if err := server.Listen(context.Background(), os.Stdin, os.Stdout); err != nil {
