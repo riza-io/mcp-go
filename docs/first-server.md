@@ -2,61 +2,39 @@
 
 Let's build your first MCP server in Go! We'll create a weather server that provides current weather data as a resource and lets Claude fetch forecasts using tools.
 
-<Note>
-  This guide uses the OpenWeatherMap API. You'll need a free API key from [OpenWeatherMap](https://openweathermap.org/api) to follow along.
-</Note>
+> This guide uses the OpenWeatherMap API. You'll need a free API key from [OpenWeatherMap](https://openweathermap.org/api) to follow along.
 
 ## Prerequisites
 
-<Info>
-  The following steps are for macOS. Guides for other platforms are coming soon.
-</Info>
+> The following steps are for macOS. Guides for other platforms are coming soon.
 
-<Steps>
-  <Step title="Install Python">
-    You'll need Python 3.10 or higher:
+You'll need Go 1.22 or higher:
 
-    ```bash
-    python --version  # Should be 3.10 or higher
-    ```
-  </Step>
+```bash
+go version  # Should be 1.22 or higher
+```
 
-  <Step title="Install uv via homebrew">
-    See https://docs.astral.sh/uv/ for more information.
 
-    ```bash
-    brew install uv
-    uv --version # Should be 0.4.18 or higher
-    ```
-  </Step>
+Create a new module using `go mod init`
 
-  <Step title="Create a new project using the MCP project creator">
-    ```bash
-    uvx create-mcp-server --path weather_service
-    cd weather_service
-    ```
-  </Step>
+```bash
+mkdir mcp-go-weather
+cd mcp-go-weather
+go mod init github.com/example/mcp-go-weather
+```
 
-  <Step title="Install additional dependencies">
-    ```bash
-    uv add httpx python-dotenv
-    ```
-  </Step>
+Create `.env`
 
-  <Step title="Set up environment">
-    Create `.env`:
-
-    ```bash
-    OPENWEATHER_API_KEY=your-api-key-here
-    ```
-  </Step>
-</Steps>
+```bash
+OPENWEATHER_API_KEY=your-api-key-here
+```
 
 ## Create your server
 
-<Steps>
-  <Step title="Add the base imports and setup">
-  In `weather_service/src/weather_service/server.py`
+### Add the base imports and setup
+
+In `weather_service/src/weather_service/server.py`
+
   ```python
   import os
   import json
