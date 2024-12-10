@@ -6,16 +6,13 @@ Let's build your first MCP server in Go! We'll create a weather server that prov
 
 ## Prerequisites
 
-> The following steps are for macOS. Guides for other platforms are coming soon.
-
-You'll need Go 1.22 or higher:
+You'll need Go 1.22 or higher
 
 ```bash
 go version  # Should be 1.22 or higher
 ```
 
-
-Create a new module using `go mod init`
+Create a new module using `go mod init`.
 
 ```bash
 mkdir mcp-go-weather
@@ -23,781 +20,371 @@ cd mcp-go-weather
 go mod init github.com/example/mcp-go-weather
 ```
 
-Create `.env`
+Add your API key to the environment.
 
 ```bash
-OPENWEATHER_API_KEY=your-api-key-here
+export OPENWEATHER_API_KEY=your-api-key-here
 ```
 
 ## Create your server
 
 ### Add the base imports and setup
 
-In `weather_service/src/weather_service/server.py`
+In `main.go` add the entry point and base server implemenation.
 
-  ```python
-  import os
-  import json
-  import logging
-  from datetime import datetime, timedelta
-  from collections.abc import Sequence
-  from functools import lru_cache
-  from typing import Any
+```go
+package main
 
-  import httpx
-  import asyncio
-  from dotenv import load_dotenv
-  from mcp.server import Server
-  from mcp.types import (
-      Resource,
-      Tool,
-      TextContent,
-      ImageContent,
-      EmbeddedResource,
-      LoggingLevel
-  )
-  from pydantic import AnyUrl
+import (
+	"context"
+	"log"
+	"os"
 
-  # Load environment variables
-  load_dotenv()
+	"github.com/riza-io/mcp-go"
+)
 
-  # Configure logging
-  logging.basicConfig(level=logging.INFO)
-  logger = logging.getLogger("weather-server")
+type WeatherServer struct {
+	key         string
+	defaultCity string
 
-  # API configuration
-  API_KEY = os.getenv("OPENWEATHER_API_KEY")
-  if not API_KEY:
-      raise ValueError("OPENWEATHER_API_KEY environment variable required")
+	mcp.UnimplementedServer
+}
 
-  API_BASE_URL = "http://api.openweathermap.org/data/2.5"
-  DEFAULT_CITY = "London"
-  CURRENT_WEATHER_ENDPOINT = "weather"
-  FORECAST_ENDPOINT = "forecast"
+func (s *WeatherServer) Initialize(ctx context.Context, req *mcp.Request[mcp.InitializeRequest]) (*mcp.Response[mcp.InitializeResponse], error) {
+	return mcp.NewResponse(&mcp.InitializeResponse{
+		ProtocolVersion: req.Params.ProtocolVersion,
+		Capabilities: mcp.ServerCapabilities{
+			Resources: &mcp.Resources{},
+			Tools:     &mcp.Tools{},
+		},
+	}), nil
+}
 
-  # The rest of our server implementation will go here
-  ```
-  </Step>
+func main() {
+	ctx := context.Background()
 
-  <Step title="Add weather fetching functionality">
-  Add this functionality:
+	if os.Getenv("OPENWEATHER_API_KEY") == "" {
+		log.Fatal("OPENWEATHER_API_KEY environment variable required")
+	}
 
-  ```python
-  # Create reusable params
-  http_params = {
-      "appid": API_KEY,
-      "units": "metric"
-  }
+	server := mcp.NewStdioServer(&WeatherServer{
+		defaultCity: "London",
+		key:         os.Getenv("OPENWEATHER_API_KEY"),
+	})
 
-  async def fetch_weather(city: str) -> dict[str, Any]:
-      async with httpx.AsyncClient() as client:
-          response = await client.get(
-              f"{API_BASE_URL}/weather",
-              params={"q": city, **http_params}
-          )
-          response.raise_for_status()
-          data = response.json()
+	if err := server.Listen(ctx, os.Stdin, os.Stdout); err != nil {
+		log.Fatal(err)
+	}
+}
+```
 
-      return {
-          "temperature": data["main"]["temp"],
-          "conditions": data["weather"][0]["description"],
-          "humidity": data["main"]["humidity"],
-          "wind_speed": data["wind"]["speed"],
-          "timestamp": datetime.now().isoformat()
-      }
+### Add weather fetching functionality
 
+In `fetch.go` add two functions to fetch the weather and the five-day forecast.
+Note that JSON handling in Go is verbose, hence the length of this code.
 
-  app = Server("weather-server")
-    ```
-  </Step>
+```go
+package main
 
-  <Step title="Implement resource handlers">
-    Add these resource-related handlers to our main function:
+import (
+	"encoding/json"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
 
-    ```python
-    app = Server("weather-server")
+type Weather struct {
+	Temperature float64   `json:"temperature"`
+	Conditions  string    `json:"conditions"`
+	Humidity    float64   `json:"humidity"`
+	WindSpeed   float64   `json:"wind_speed"`
+	Timestamp   time.Time `json:"timestamp"`
+}
 
-    @app.list_resources()
-    async def list_resources() -> list[Resource]:
-        """List available weather resources."""
-        uri = AnyUrl(f"weather://{DEFAULT_CITY}/current")
-        return [
-            Resource(
-                uri=uri,
-                name=f"Current weather in {DEFAULT_CITY}",
-                mimeType="application/json",
-                description="Real-time weather data"
-            )
-        ]
+type weatherResponse struct {
+	Main struct {
+		Temp     float64 `json:"temp"`
+		Humidity float64 `json:"humidity"`
+	} `json:"main"`
+	Wind struct {
+		Speed float64 `json:"speed"`
+	} `json:"wind"`
+	Weather []struct {
+		Description string `json:"description"`
+	} `json:"weather"`
+}
 
-    @app.read_resource()
-    async def read_resource(uri: AnyUrl) -> str:
-        """Read current weather data for a city."""
-        city = DEFAULT_CITY
-        if str(uri).startswith("weather://") and str(uri).endswith("/current"):
-            city = str(uri).split("/")[-2]
-        else:
-            raise ValueError(f"Unknown resource: {uri}")
+func (s *WeatherServer) fetchWeather(city string) (*Weather, error) {
+	q := url.Values{}
+	q.Set("q", city)
+	q.Set("appid", s.key)
+	q.Set("units", "metric")
 
-        try:
-            weather_data = await fetch_weather(city)
-            return json.dumps(weather_data, indent=2)
-        except httpx.HTTPError as e:
-            raise RuntimeError(f"Weather API error: {str(e)}")
+	uri := "http://api.openweathermap.org/data/2.5/weather?" + q.Encode()
+	resp, err := http.Get(uri)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
-    ```
-  </Step>
+	var data weatherResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
 
-  <Step title="Implement tool handlers">
-    Add these tool-related handlers:
+	return &Weather{
+		Temperature: data.Main.Temp,
+		Conditions:  data.Weather[0].Description,
+		Humidity:    data.Main.Humidity,
+		WindSpeed:   data.Wind.Speed,
+		Timestamp:   time.Now(),
+	}, nil
+}
 
-    ```python
-    app = Server("weather-server")
+type Forecast struct {
+	Date        string  `json:"date"`
+	Temperature float64 `json:"temperature"`
+	Conditions  string  `json:"conditions"`
+}
 
-    # Resource implementation ...
+type forecastResponse struct {
+	List []struct {
+		DatetimeText string `json:"dt_txt"`
+		Main         struct {
+			Temp float64 `json:"temp"`
+		} `json:"main"`
+		Weather []struct {
+			Description string `json:"description"`
+		} `json:"weather"`
+	} `json:"list"`
+}
 
-    @app.list_tools()
-    async def list_tools() -> list[Tool]:
-        """List available weather tools."""
-        return [
-            Tool(
-                name="get_forecast",
-                description="Get weather forecast for a city",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "City name"
-                        },
-                        "days": {
-                            "type": "number",
-                            "description": "Number of days (1-5)",
-                            "minimum": 1,
-                            "maximum": 5
-                        }
-                    },
-                    "required": ["city"]
-                }
-            )
-        ]
+func (s *WeatherServer) fetchForecast(city string, days int) ([]Forecast, error) {
+	q := url.Values{}
+	q.Set("q", city)
+	q.Set("cnt", strconv.Itoa(days*8))
+	q.Set("appid", s.key)
+	q.Set("units", "metric")
 
-    @app.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        """Handle tool calls for weather forecasts."""
-        if name != "get_forecast":
-            raise ValueError(f"Unknown tool: {name}")
+	uri := "http://api.openweathermap.org/data/2.5/forecast?" + q.Encode()
+	resp, err := http.Get(uri)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
-        if not isinstance(arguments, dict) or "city" not in arguments:
-            raise ValueError("Invalid forecast arguments")
+	var data forecastResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
 
-        city = arguments["city"]
-        days = min(int(arguments.get("days", 3)), 5)
+	forecasts := []Forecast{}
+	for i, day_data := range data.List {
+		if i%8 != 0 {
+			continue
+		}
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{API_BASE_URL}/{FORECAST_ENDPOINT}",
-                    params={
-                        "q": city,
-                        "cnt": days * 8,  # API returns 3-hour intervals
-                        **http_params,
-                    }
-                )
-                response.raise_for_status()
-                data = response.json()
+		date, _, _ := strings.Cut(day_data.DatetimeText, " ")
 
-            forecasts = []
-            for i in range(0, len(data["list"]), 8):
-                day_data = data["list"][i]
-                forecasts.append({
-                    "date": day_data["dt_txt"].split()[0],
-                    "temperature": day_data["main"]["temp"],
-                    "conditions": day_data["weather"][0]["description"]
-                })
+		forecasts = append(forecasts, Forecast{
+			Date:        date,
+			Temperature: day_data.Main.Temp,
+			Conditions:  day_data.Weather[0].Description,
+		})
+	}
 
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(forecasts, indent=2)
-                )
-            ]
-        except httpx.HTTPError as e:
-            logger.error(f"Weather API error: {str(e)}")
-            raise RuntimeError(f"Weather API error: {str(e)}")
-    ```
-  </Step>
+	return forecasts, nil
+}
+```
 
-  <Step title="Add the main function">
-    Add this to the end of `weather_service/src/weather_service/server.py`:
+### Implement resource handlers
 
-    ```python
-    async def main():
-        # Import here to avoid issues with event loops
-        from mcp.server.stdio import stdio_server
+Add resource-related handlers to a new `reosurces.go` file.
 
-        async with stdio_server() as (read_stream, write_stream):
-            await app.run(
-                read_stream,
-                write_stream,
-                app.create_initialization_options()
-            )
-    ```
-  </Step>
+```go
+package main
 
-  <Step title="Check your entry point in __init__.py">
-    Add this to the end of `weather_service/src/weather_service/__init__.py`:
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 
-    ```python
-    from . import server
-    import asyncio
+	"github.com/riza-io/mcp-go"
+)
 
-    def main():
-       """Main entry point for the package."""
-       asyncio.run(server.main())
+// List available weather resources.
+func (s *WeatherServer) ListResources(ctx context.Context, req *mcp.Request[mcp.ListResourcesRequest]) (*mcp.Response[mcp.ListResourcesResponse], error) {
+	return mcp.NewResponse(&mcp.ListResourcesResponse{
+		Resources: []mcp.Resource{
+			{
+				URI:         "weather://" + s.defaultCity + "/current",
+				Name:        "Current weather in " + s.defaultCity,
+				Description: "Real-time weather data",
+				MimeType:    "application/json",
+			},
+		},
+	}), nil
+}
 
-    # Optionally expose other important items at package level
-    __all__ = ['main', 'server']
-    ```
-  </Step>
-</Steps>
+func (s *WeatherServer) ReadResource(ctx context.Context, req *mcp.Request[mcp.ReadResourceRequest]) (*mcp.Response[mcp.ReadResourceResponse], error) {
+	city := s.defaultCity
 
+	if strings.HasPrefix(req.Params.URI, "weather://") && strings.HasSuffix(req.Params.URI, "/current") {
+		city = strings.TrimPrefix(req.Params.URI, "weather://")
+		city = strings.TrimSuffix(city, "/current")
+	} else {
+		return nil, fmt.Errorf("unknown resource: %s", req.Params.URI)
+	}
 
+	data, err := s.fetchWeather(city)
+	if err != nil {
+		return nil, err
+	}
 
+	contents, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return mcp.NewResponse(&mcp.ReadResourceResponse{
+		Contents: []mcp.ResourceContent{
+			{
+				URI:      req.Params.URI,
+				MimeType: "application/json",
+				Text:     string(contents),
+			},
+		},
+	}), nil
+}
+```
+
+### Implement tool handlers
+
+Add these tool-related handlers to `tools.go`.
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/riza-io/mcp-go"
+)
+
+const getForecastSchema = `{
+  "type": "object",
+  "properties": {
+    "city": {
+      "type": "string",
+      "description": "City name"
+    },
+    "days": {
+      "type": "number",
+      "description": "Number of days (1-5)",
+      "minimum": 1,
+      "maximum": 5
+    }
+  },
+  "required": ["city"]
+}`
+
+type GetForecastArguments struct {
+	City string `json:"city"`
+	Days int    `json:"days"`
+}
+
+func (s *WeatherServer) ListTools(ctx context.Context, req *mcp.Request[mcp.ListToolsRequest]) (*mcp.Response[mcp.ListToolsResponse], error) {
+	return mcp.NewResponse(&mcp.ListToolsResponse{
+		Tools: []mcp.Tool{
+			{
+				Name:        "get_forecast",
+				Description: "Get weather forecast for a city",
+				InputSchema: json.RawMessage([]byte(getForecastSchema)),
+			},
+		},
+	}), nil
+}
+
+func (s *WeatherServer) CallTool(ctx context.Context, req *mcp.Request[mcp.CallToolRequest]) (*mcp.Response[mcp.CallToolResponse], error) {
+	var args GetForecastArguments
+	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+		return nil, err
+	}
+
+	forecasts, err := s.fetchForecast(args.City, args.Days)
+	if err != nil {
+		return nil, err
+	}
+
+	text, err := json.MarshalIndent(forecasts, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return mcp.NewResponse(&mcp.CallToolResponse{
+		Content: []mcp.Content{
+			{
+				Type: "text",
+				Text: string(text),
+			},
+		},
+	}), nil
+}
+```
+
+The server is now complete! Build it using `go build`
+
+```bash
+go build -o mcp-weather ./...
+```
 
 ## Connect to Claude Desktop
 
-<Steps>
-  <Step title="Update Claude config">
-    Add to `claude_desktop_config.json`:
+### Update Claude config
 
-    ```json
-    {
-      "mcpServers": {
-        "weather": {
-          "command": "uv",
-          "args": [
-            "--directory",
-            "path/to/your/project",
-            "run",
-            "weather-service"
-          ],
-          "env": {
-            "OPENWEATHER_API_KEY": "your-api-key"
-          }
-        }
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "command": "/path/to/mcp-weather",
+      "env": {
+        "OPENWEATHER_API_KEY": "your-api-key"
       }
     }
-    ```
-  </Step>
+  }
+}
+```
 
-  <Step title="Restart Claude">
-    1. Quit Claude completely
+### Restart Claude
 
-    2. Start Claude again
-
-    3. Look for your weather server in the 🔌 menu
-  </Step>
-</Steps>
+1. Quit Claude completely
+2. Start Claude again
+3. Look for your weather server in the 🔌 menu
 
 ## Try it out!
 
-<AccordionGroup>
-  <Accordion title="Check Current Weather" active>
-    Ask Claude:
+Ask Claude the following questions:
 
-    ```
-    What's the current weather in San Francisco? Can you analyze the conditions and tell me if it's a good day for outdoor activities?
-    ```
-  </Accordion>
+> What's the current weather in San Francisco? Can you analyze the conditions and tell me if it's a good day for outdoor activities?
 
-  <Accordion title="Get a Forecast">
-    Ask Claude:
 
-    ```
-    Can you get me a 5-day forecast for Tokyo and help me plan what clothes to pack for my trip?
-    ```
-  </Accordion>
+> Can you get me a 5-day forecast for Tokyo and help me plan what clothes to pack for my trip?
 
-  <Accordion title="Compare Weather">
-    Ask Claude:
-
-    ```
-    Can you analyze the forecast for both Tokyo and San Francisco and tell me which city would be better for outdoor photography this week?
-    ```
-  </Accordion>
-</AccordionGroup>
-
-## Understanding the code
-
-<Tabs>
-  <Tab title="Type Hints">
-    ```python
-    async def read_resource(self, uri: str) -> ReadResourceResult:
-        # ...
-    ```
-
-    Python type hints help catch errors early and improve code maintainability.
-  </Tab>
-
-  <Tab title="Resources">
-    ```python
-    @app.list_resources()
-    async def list_resources(self) -> ListResourcesResult:
-        return ListResourcesResult(
-            resources=[
-                Resource(
-                    uri=f"weather://{DEFAULT_CITY}/current",
-                    name=f"Current weather in {DEFAULT_CITY}",
-                    mimeType="application/json",
-                    description="Real-time weather data"
-                )
-            ]
-        )
-    ```
-
-    Resources provide data that Claude can access as context.
-  </Tab>
-
-  <Tab title="Tools">
-    ```python
-    Tool(
-        name="get_forecast",
-        description="Get weather forecast for a city",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "city": {
-                    "type": "string",
-                    "description": "City name"
-                },
-                "days": {
-                    "type": "number",
-                    "description": "Number of days (1-5)",
-                    "minimum": 1,
-                    "maximum": 5
-                }
-            },
-            "required": ["city"]
-        }
-    )
-    ```
-
-    Tools let Claude take actions through your server with validated inputs.
-  </Tab>
-
-  <Tab title="Server Structure">
-    ```python
-    # Create server instance with name
-    app = Server("weather-server")
-
-    # Register resource handler
-    @app.list_resources()
-    async def list_resources() -> list[Resource]:
-        """List available resources"""
-        return [...]
-
-    # Register tool handler
-    @app.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
-        """Handle tool execution"""
-        return [...]
-
-    # Register additional handlers
-    @app.read_resource()
-    ...
-    @app.list_tools()
-    ...
-    ```
-
-    The MCP server uses a simple app pattern - create a Server instance and register handlers with decorators. Each handler maps to a specific MCP protocol operation.
-  </Tab>
-</Tabs>
-
-## Best practices
-
-<CardGroup cols={1}>
-  <Card title="Error Handling" icon="shield">
-    ```python
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(..., params={..., **http_params})
-            response.raise_for_status()
-    except httpx.HTTPError as e:
-        raise McpError(
-            ErrorCode.INTERNAL_ERROR,
-            f"API error: {str(e)}"
-        )
-    ```
-  </Card>
-
-  <Card title="Type Validation" icon="check">
-    ```python
-    if not isinstance(args, dict) or "city" not in args:
-        raise McpError(
-            ErrorCode.INVALID_PARAMS,
-            "Invalid forecast arguments"
-        )
-    ```
-  </Card>
-
-  <Card title="Environment Variables" icon="gear">
-    ```python
-    if not API_KEY:
-        raise ValueError("OPENWEATHER_API_KEY is required")
-    ```
-  </Card>
-
-</CardGroup>
+> Can you analyze the forecast for both Tokyo and San Francisco and tell me which city would be better for outdoor photography this week?
 
 ## Available transports
 
-While this guide uses stdio transport, MCP supports additional transport options:
-
-### SSE (Server-Sent Events)
-
-```python
-from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Route
-
-# Create SSE transport with endpoint
-sse = SseServerTransport("/messages")
-
-# Handler for SSE connections
-async def handle_sse(scope, receive, send):
-    async with sse.connect_sse(scope, receive, send) as streams:
-        await app.run(
-            streams[0], streams[1], app.create_initialization_options()
-        )
-
-# Handler for client messages
-async def handle_messages(scope, receive, send):
-    await sse.handle_post_message(scope, receive, send)
-
-# Create Starlette app with routes
-app = Starlette(
-    debug=True,
-    routes=[
-        Route("/sse", endpoint=handle_sse),
-        Route("/messages", endpoint=handle_messages, methods=["POST"]),
-    ],
-)
-
-# Run with any ASGI server
-import uvicorn
-uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-## Advanced features
-
-<Steps>
-  <Step title="Understanding Request Context">
-    The request context provides access to the current request's metadata and the active client session. Access it through `server.request_context`:
-
-    ```python
-    @app.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
-        # Access the current request context
-        ctx = self.request_context
-
-        # Get request metadata like progress tokens
-        if progress_token := ctx.meta.progressToken:
-            # Send progress notifications via the session
-            await ctx.session.send_progress_notification(
-                progress_token=progress_token,
-                progress=0.5,
-                total=1.0
-            )
-
-        # Sample from the LLM client
-        result = await ctx.session.create_message(
-            messages=[
-                SamplingMessage(
-                    role="user",
-                    content=TextContent(
-                        type="text",
-                        text="Analyze this weather data: " + json.dumps(arguments)
-                    )
-                )
-            ],
-            max_tokens=100
-        )
-
-        return [TextContent(type="text", text=result.content.text)]
-    ```
-  </Step>
-
-  <Step title="Add caching">
-    ```python
-    # Cache settings
-    cache_timeout = timedelta(minutes=15)
-    last_cache_time = None
-    cached_weather = None
-
-    async def fetch_weather(city: str) -> dict[str, Any]:
-        global cached_weather, last_cache_time
-
-        now = datetime.now()
-        if (cached_weather is None or
-            last_cache_time is None or
-            now - last_cache_time > cache_timeout):
-
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{API_BASE_URL}/{CURRENT_WEATHER_ENDPOINT}",
-                    params={"q": city, **http_params}
-                )
-                response.raise_for_status()
-                data = response.json()
-
-            cached_weather = {
-                "temperature": data["main"]["temp"],
-                "conditions": data["weather"][0]["description"],
-                "humidity": data["main"]["humidity"],
-                "wind_speed": data["wind"]["speed"],
-                "timestamp": datetime.now().isoformat()
-            }
-            last_cache_time = now
-
-        return cached_weather
-    ```
-  </Step>
-
-  <Step title="Add progress notifications">
-    ```python
-    @self.call_tool()
-    async def call_tool(self, name: str, arguments: Any) -> CallToolResult:
-        if progress_token := self.request_context.meta.progressToken:
-            # Send progress notifications
-            await self.request_context.session.send_progress_notification(
-                progress_token=progress_token,
-                progress=1,
-                total=2
-            )
-
-            # Fetch data...
-
-            await self.request_context.session.send_progress_notification(
-                progress_token=progress_token,
-                progress=2,
-                total=2
-            )
-
-        # Rest of the method implementation...
-    ```
-  </Step>
-
-  <Step title="Add logging support">
-    ```python
-    # Set up logging
-    logger = logging.getLogger("weather-server")
-    logger.setLevel(logging.INFO)
-
-    @app.set_logging_level()
-    async def set_logging_level(level: LoggingLevel) -> EmptyResult:
-        logger.setLevel(level.upper())
-        await app.request_context.session.send_log_message(
-            level="info",
-            data=f"Log level set to {level}",
-            logger="weather-server"
-        )
-        return EmptyResult()
-
-    # Use logger throughout the code
-    # For example:
-    # logger.info("Weather data fetched successfully")
-    # logger.error(f"Error fetching weather data: {str(e)}")
-    ```
-  </Step>
-
-  <Step title="Add resource templates">
-    ```python
-    @app.list_resource_templates()
-    async def list_resource_templates() -> list[ResourceTemplate]:
-        return [
-            ResourceTemplate(
-                uriTemplate="weather://{city}/current",
-                name="Current weather for any city",
-                mimeType="application/json"
-            )
-        ]
-    ```
-  </Step>
-</Steps>
-
-## Testing
-
-<Steps>
-  <Step title="Create test file">
-  Create `tests/weather_test.py`:
-
-  ```python
-  import pytest
-  import os
-  from unittest.mock import patch, Mock
-  from datetime import datetime
-  import json
-  from pydantic import AnyUrl
-  os.environ["OPENWEATHER_API_KEY"] = "TEST"
-
-  from weather_service.server import (
-      fetch_weather,
-      read_resource,
-      call_tool,
-      list_resources,
-      list_tools,
-      DEFAULT_CITY
-  )
-
-  @pytest.fixture
-  def anyio_backend():
-      return "asyncio"
-
-  @pytest.fixture
-  def mock_weather_response():
-      return {
-          "main": {
-              "temp": 20.5,
-              "humidity": 65
-          },
-          "weather": [
-              {"description": "scattered clouds"}
-          ],
-          "wind": {
-              "speed": 3.6
-          }
-      }
-
-  @pytest.fixture
-  def mock_forecast_response():
-      return {
-          "list": [
-              {
-                  "dt_txt": "2024-01-01 12:00:00",
-                  "main": {"temp": 18.5},
-                  "weather": [{"description": "sunny"}]
-              },
-              {
-                  "dt_txt": "2024-01-02 12:00:00",
-                  "main": {"temp": 17.2},
-                  "weather": [{"description": "cloudy"}]
-              }
-          ]
-      }
-
-  @pytest.mark.anyio
-  async def test_fetch_weather(mock_weather_response):
-      with patch('requests.Session.get') as mock_get:
-          mock_get.return_value.json.return_value = mock_weather_response
-          mock_get.return_value.raise_for_status = Mock()
-
-          weather = await fetch_weather("London")
-
-          assert weather["temperature"] == 20.5
-          assert weather["conditions"] == "scattered clouds"
-          assert weather["humidity"] == 65
-          assert weather["wind_speed"] == 3.6
-          assert "timestamp" in weather
-
-  @pytest.mark.anyio
-  async def test_read_resource():
-      with patch('weather_service.server.fetch_weather') as mock_fetch:
-          mock_fetch.return_value = {
-              "temperature": 20.5,
-              "conditions": "clear sky",
-              "timestamp": datetime.now().isoformat()
-          }
-
-          uri = AnyUrl("weather://London/current")
-          result = await read_resource(uri)
-
-          assert isinstance(result, str)
-          assert "temperature" in result
-          assert "clear sky" in result
-
-  @pytest.mark.anyio
-  async def test_call_tool(mock_forecast_response):
-      class Response():
-          def raise_for_status(self):
-              pass
-
-          def json(self):
-              return mock_forecast_response
-
-      class AsyncClient():
-          async def __aenter__(self):
-              return self
-
-          async def __aexit__(self, *exc_info):
-              pass
-
-          async def get(self, *args, **kwargs):
-              return Response()
-
-      with patch('httpx.AsyncClient', new=AsyncClient) as mock_client:
-          result = await call_tool("get_forecast", {"city": "London", "days": 2})
-
-          assert len(result) == 1
-          assert result[0].type == "text"
-          forecast_data = json.loads(result[0].text)
-          assert len(forecast_data) == 1
-          assert forecast_data[0]["temperature"] == 18.5
-          assert forecast_data[0]["conditions"] == "sunny"
-
-  @pytest.mark.anyio
-  async def test_list_resources():
-      resources = await list_resources()
-      assert len(resources) == 1
-      assert resources[0].name == f"Current weather in {DEFAULT_CITY}"
-      assert resources[0].mimeType == "application/json"
-
-  @pytest.mark.anyio
-  async def test_list_tools():
-      tools = await list_tools()
-      assert len(tools) == 1
-      assert tools[0].name == "get_forecast"
-      assert "city" in tools[0].inputSchema["properties"]
-  ```
-  </Step>
-  <Step title="Run tests">
-  ```bash
-  uv add --dev pytest
-  uv run pytest
-  ```
-  </Step>
-</Steps>
-
-## Troubleshooting
-
-### Installation issues
-
-```bash
-# Check Python version
-python --version
-
-# Reinstall dependencies
-uv sync --reinstall
-```
-
-### Type checking
-
-```bash
-# Install mypy
-uv add --dev pyright
-
-# Run type checker
-uv run pyright src
-```
+mcp-go currently supports the stdio transport. Follow this
+[issue](https://github.com/riza-io/mcp-go/issues/5) to track progress on the SSE
+transports.
 
 ## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Architecture overview" icon="sitemap" href="/docs/concepts/architecture">
-    Learn more about the MCP architecture
-  </Card>
-
-  <Card title="Python SDK" icon="python" href="https://github.com/modelcontextprotocol/python-sdk">
-    Check out the Python SDK on GitHub
-  </Card>
-</CardGroup>
+- [Architecture overview](https://docs.riza.io/concepts/architecture)
+- [MCP Go SDK](https://github.com/riza-io/mcp-go)
