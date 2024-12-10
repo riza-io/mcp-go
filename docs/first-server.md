@@ -20,6 +20,12 @@ cd mcp-go-weather
 go mod init github.com/example/mcp-go-weather
 ```
 
+Add the `mcp-go` module to your project.
+
+```bash
+go get github.com/riza-io/mcp-go
+```
+
 Add your API key to the environment.
 
 ```bash
