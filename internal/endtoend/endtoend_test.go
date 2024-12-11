@@ -6,10 +6,15 @@ import (
 	"testing"
 
 	"github.com/riza-io/mcp-go"
+	"github.com/riza-io/mcp-go/stdio"
 )
 
 type server struct {
 	mcp.UnimplementedServer
+}
+
+type client struct {
+	mcp.UnimplementedClient
 }
 
 func (s *server) Initialize(ctx context.Context, req *mcp.Request[mcp.InitializeRequest]) (*mcp.Response[mcp.InitializeResponse], error) {
@@ -25,36 +30,42 @@ func (s *server) SetLogLevel(ctx context.Context, req *mcp.Request[mcp.SetLogLev
 func TestEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
-	loggingInterceptor := mcp.UnaryInterceptorFunc(
-		func(next mcp.UnaryFunc) mcp.UnaryFunc {
-			return mcp.UnaryFunc(func(ctx context.Context, request mcp.AnyRequest) (mcp.AnyResponse, error) {
-				t.Logf("calling: %s", request.Method())
-				t.Logf("request: %s", request.ID())
-				response, err := next(ctx, request)
-				if err != nil {
-					t.Logf("error: %v", err)
-				} else {
-					t.Logf("response: %s", response.Any())
-				}
-				return response, err
-			})
-		},
-	)
+	// loggingInterceptor := mcp.UnaryInterceptorFunc(
+	// 	func(next mcp.UnaryFunc) mcp.UnaryFunc {
+	// 		return mcp.UnaryFunc(func(ctx context.Context, request mcp.AnyRequest) (mcp.AnyResponse, error) {
+	// 			t.Logf("calling: %s", request.Method())
+	// 			t.Logf("request: %s", request.ID())
+	// 			response, err := next(ctx, request)
+	// 			if err != nil {
+	// 				t.Logf("error: %v", err)
+	// 			} else {
+	// 				t.Logf("response: %s", response.Any())
+	// 			}
+	// 			return response, err
+	// 		})
+	// 	},
+	// )
 
 	stdinr, stdinw := io.Pipe()
 	stdoutr, stdoutw := io.Pipe()
 
-	client := mcp.NewStdioClient(stdinr, stdoutw)
-	srv := mcp.NewStdioServer(&server{}, mcp.WithInterceptors(loggingInterceptor))
+	c := mcp.NewClient(stdio.NewStream(stdinr, stdoutw), &client{})
+	s := mcp.NewServer(stdio.NewStream(stdoutr, stdinw), &server{})
 
 	go func() {
-		if err := srv.Listen(ctx, stdoutr, stdinw); err != nil {
+		if err := s.Listen(ctx); err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+	}()
+
+	go func() {
+		if err := c.Listen(ctx); err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
 	}()
 
 	t.Run("initialize", func(t *testing.T) {
-		resp, err := client.Initialize(ctx, mcp.NewRequest(&mcp.InitializeRequest{
+		resp, err := c.Initialize(ctx, mcp.NewRequest(&mcp.InitializeRequest{
 			ProtocolVersion: "1.0.0",
 		}))
 		if err != nil {
@@ -66,14 +77,14 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("ping", func(t *testing.T) {
-		_, err := client.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
+		_, err := c.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
 		if err != nil {
 			t.Fatalf("failed to ping server: %v", err)
 		}
 	})
 
 	t.Run("set log level", func(t *testing.T) {
-		_, err := client.SetLogLevel(ctx, mcp.NewRequest(&mcp.SetLogLevelRequest{
+		_, err := c.SetLogLevel(ctx, mcp.NewRequest(&mcp.SetLogLevelRequest{
 			Level: mcp.LevelInfo,
 		}))
 		if err != nil {

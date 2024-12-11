@@ -122,11 +122,11 @@ type GetPromptRequest struct {
 }
 
 type GetPromptResponse struct {
-	Description string    `json:"description"`
-	Messages    []Message `json:"messages"`
+	Description string          `json:"description"`
+	Messages    []PromptMessage `json:"messages"`
 }
 
-type Message struct {
+type PromptMessage struct {
 	Role    string  `json:"role"`
 	Content Content `json:"content"`
 }
@@ -227,4 +227,12 @@ type SetLogLevelRequest struct {
 }
 
 type SetLogLevelResponse struct {
+}
+
+type SamplingRequest struct {
+	MaxTokens int `json:"maxTokens"`
+}
+
+type SamplingResponse struct {
+	Role string `json:"role"`
 }

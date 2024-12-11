@@ -1,17 +1,12 @@
 package mcp
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-
-	"github.com/riza-io/mcp-go/internal/jsonrpc"
 )
 
-type Server interface {
+type ServerHandler interface {
 	Initialize(ctx context.Context, req *Request[InitializeRequest]) (*Response[InitializeResponse], error)
 	ListTools(ctx context.Context, req *Request[ListToolsRequest]) (*Response[ListToolsResponse], error)
 	CallTool(ctx context.Context, req *Request[CallToolRequest]) (*Response[CallToolResponse], error)
@@ -71,10 +66,10 @@ func (s *UnimplementedServer) SetLogLevel(ctx context.Context, req *Request[SetL
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Request, params *T, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) (any, error) {
+func process[T, V any](ctx context.Context, cfg *callable, msg *Message, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) error {
 	var interceptor Interceptor
-	if len(cfg.interceptors) > 0 {
-		interceptor = newStack(cfg.interceptors)
+	if len(cfg.Interceptors) > 0 {
+		interceptor = newStack(cfg.Interceptors)
 	} else {
 		interceptor = UnaryInterceptorFunc(
 			func(next UnaryFunc) UnaryFunc {
@@ -85,14 +80,16 @@ func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Reque
 		)
 	}
 
-	if len(msg.Params) > 0 {
-		if err := json.Unmarshal(msg.Params, &params); err != nil {
-			return nil, err
+	var params T
+	if msg.Params != nil && len(*msg.Params) > 0 {
+		if err := json.Unmarshal(*msg.Params, &params); err != nil {
+			return err
 		}
 	}
-	req := NewRequest(params)
+
+	req := NewRequest(&params)
 	req.id = msg.ID.String()
-	req.method = msg.Method
+	req.method = *msg.Method
 
 	inner := UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {
 		req := request.(*Request[T])
@@ -106,131 +103,109 @@ func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Reque
 
 	rr, err := interceptor.WrapUnary(inner)(ctx, req)
 	if err != nil {
-		return nil, err
+		return cfg.Stream.Send(&Message{
+			ID:      msg.ID,
+			JsonRPC: msg.JsonRPC,
+			Error: &ErrorDetail{
+				Code:    9,
+				Message: err.Error(),
+			},
+		})
 	}
 
 	resp := rr.(*Response[V])
-	return resp.Result, nil
+	rawresult, err := json.Marshal(resp.Result)
+	if err != nil {
+		return cfg.Stream.Send(&Message{
+			ID:      msg.ID,
+			JsonRPC: msg.JsonRPC,
+			Error: &ErrorDetail{
+				Code:    9,
+				Message: err.Error(),
+			},
+		})
+	}
 
+	rawmsg := json.RawMessage(rawresult)
+	return cfg.Stream.Send(&Message{
+		ID:      msg.ID,
+		JsonRPC: msg.JsonRPC,
+		Result:  &rawmsg,
+	})
 }
 
 type serverConfig struct {
 	interceptors []Interceptor
 }
 
-type StdioServer struct {
-	cfg *serverConfig
-	srv Server
+type Server struct {
+	cfg    *serverConfig
+	srv    ServerHandler
+	stream Stream
 }
 
-func NewStdioServer(srv Server, opts ...Option) *StdioServer {
+func NewServer(stream Stream, handler ServerHandler, opts ...Option) *Server {
 	cfg := &serverConfig{}
 	for _, opt := range opts {
 		opt.applyToServer(cfg)
 	}
-	return &StdioServer{
-		cfg: cfg,
-		srv: srv,
+	return &Server{
+		cfg:    cfg,
+		stream: stream,
+		srv:    handler,
 	}
 }
 
-func (s StdioServer) Listen(ctx context.Context, r io.Reader, w io.Writer) error {
-	scanner := bufio.NewScanner(r)
+func (s Server) Listen(ctx context.Context) error {
+	for {
+		msg, err := s.stream.Recv()
 
-	for scanner.Scan() {
-
-		// Recover from panics when processing a message
-		bs, err := s.processMessage(ctx, scanner.Bytes())
-		if err == nil {
-			fmt.Fprintln(w, string(bs))
+		if err != nil {
+			return err
 		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		return err
+		go func() {
+			s.processMessage(ctx, msg)
+		}()
 	}
-	return nil
 }
 
-func (s StdioServer) processMessage(ctx context.Context, line []byte) ([]byte, error) {
-	cfg := s.cfg
+func (s Server) processMessage(ctx context.Context, msg *Message) error {
+	if msg.Method == nil {
+		return nil
+	}
+
+	cfg := &callable{
+		Interceptors: s.cfg.interceptors,
+		Stream:       s.stream,
+	}
 	srv := s.srv
 
-	dec := json.NewDecoder(bytes.NewReader(line))
-
-	var msg jsonrpc.Request
-	if err := dec.Decode(&msg); err != nil {
-		return nil, err
-	}
-
-	var result any
-	var err error
-	code := 9
-
-	switch msg.Method {
+	switch *msg.Method {
 	case "initialize":
-		params := &InitializeRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Initialize)
+		return process(ctx, cfg, msg, srv.Initialize)
 	case "completion/complete":
-		params := &CompletionRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Completion)
+		return process(ctx, cfg, msg, srv.Completion)
 	case "tools/list":
-		params := &ListToolsRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListTools)
+		return process(ctx, cfg, msg, srv.ListTools)
 	case "tools/call":
-		params := &CallToolRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.CallTool)
+		return process(ctx, cfg, msg, srv.CallTool)
 	case "prompts/list":
-		params := &ListPromptsRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListPrompts)
+		return process(ctx, cfg, msg, srv.ListPrompts)
 	case "prompts/get":
-		params := &GetPromptRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.GetPrompt)
+		return process(ctx, cfg, msg, srv.GetPrompt)
 	case "resources/list":
-		params := &ListResourcesRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListResources)
+		return process(ctx, cfg, msg, srv.ListResources)
 	case "resources/read":
-		params := &ReadResourceRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ReadResource)
+		return process(ctx, cfg, msg, srv.ReadResource)
 	case "resources/templates/list":
-		params := &ListResourceTemplatesRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
+		return process(ctx, cfg, msg, srv.ListResourceTemplates)
 	case "ping":
-		params := &PingRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Ping)
+		return process(ctx, cfg, msg, srv.Ping)
 	case "logging/setLevel":
-		params := &SetLogLevelRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.SetLogLevel)
+		return process(ctx, cfg, msg, srv.SetLogLevel)
 	default:
-		if msg.ID == "" {
-			// Ignore notifications
-			return nil, nil
-		}
-		code = -32601
-		err = fmt.Errorf("unknown method: %s", msg.Method)
+		return fmt.Errorf("unknown method: %s", msg.Method)
 	}
 
-	var resp jsonrpc.Response
-	if err != nil {
-		resp = jsonrpc.Response{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
-			Error: &jsonrpc.ErrorDetail{
-				Code:    code,
-				Message: err.Error(),
-			},
-		}
-	} else {
-		rawresult, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-		resp = jsonrpc.Response{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
-			Result:  rawresult,
-		}
-	}
-
-	return json.Marshal(resp)
 }
