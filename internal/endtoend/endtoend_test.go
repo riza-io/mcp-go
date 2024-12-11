@@ -60,4 +60,11 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("expected protocol version 1.0.0, got %s", resp.Result.ProtocolVersion)
 		}
 	}
+
+	{
+		_, err := client.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
+		if err != nil {
+			t.Fatalf("failed to ping server: %v", err)
+		}
+	}
 }

@@ -23,6 +23,7 @@ type Client interface {
 	ReadResource(ctx context.Context, req *Request[ReadResourceRequest]) (*Response[ReadResourceResponse], error)
 	ListResourceTemplates(ctx context.Context, req *Request[ListResourceTemplatesRequest]) (*Response[ListResourceTemplatesResponse], error)
 	Completion(ctx context.Context, req *Request[CompletionRequest]) (*Response[CompletionResponse], error)
+	Ping(ctx context.Context, req *Request[PingRequest]) (*Response[PingResponse], error)
 }
 
 type StdioClient struct {
@@ -165,4 +166,8 @@ func (c *StdioClient) ListResourceTemplates(ctx context.Context, request *Reques
 
 func (c *StdioClient) Completion(ctx context.Context, request *Request[CompletionRequest]) (*Response[CompletionResponse], error) {
 	return clientCallUnary[CompletionRequest, CompletionResponse](ctx, c, "completion", request)
+}
+
+func (c *StdioClient) Ping(ctx context.Context, request *Request[PingRequest]) (*Response[PingResponse], error) {
+	return clientCallUnary[PingRequest, PingResponse](ctx, c, "ping", request)
 }

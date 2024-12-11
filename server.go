@@ -21,6 +21,7 @@ type Server interface {
 	ReadResource(ctx context.Context, req *Request[ReadResourceRequest]) (*Response[ReadResourceResponse], error)
 	ListResourceTemplates(ctx context.Context, req *Request[ListResourceTemplatesRequest]) (*Response[ListResourceTemplatesResponse], error)
 	Completion(ctx context.Context, req *Request[CompletionRequest]) (*Response[CompletionResponse], error)
+	Ping(ctx context.Context, req *Request[PingRequest]) (*Response[PingResponse], error)
 }
 
 type UnimplementedServer struct{}
@@ -59,6 +60,10 @@ func (s *UnimplementedServer) ListResourceTemplates(ctx context.Context, req *Re
 
 func (s *UnimplementedServer) Completion(ctx context.Context, req *Request[CompletionRequest]) (*Response[CompletionResponse], error) {
 	return nil, fmt.Errorf("unimplemented")
+}
+
+func (s *UnimplementedServer) Ping(ctx context.Context, req *Request[PingRequest]) (*Response[PingResponse], error) {
+	return NewResponse(&PingResponse{}), nil
 }
 
 func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Request, params *T, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) (any, error) {
@@ -168,6 +173,9 @@ func (s StdioServer) Listen(ctx context.Context, r io.Reader, w io.Writer) error
 		case "resources/templates/list":
 			params := &ListResourceTemplatesRequest{}
 			result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
+		case "ping":
+			params := &PingRequest{}
+			result, err = process(ctx, cfg, msg, params, srv.Ping)
 		default:
 			if msg.ID == "" {
 				// Ignore notifications
