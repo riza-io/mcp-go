@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 )
 
-func notify[P any](ctx context.Context, c *callable, method string, req *Request[P]) error {
+func notify[P any](ctx context.Context, c *base, method string, req *Request[P]) error {
 	var interceptor Interceptor
-	if len(c.Interceptors) > 0 {
-		interceptor = newStack(c.Interceptors)
+	if len(c.interceptors) > 0 {
+		interceptor = newStack(c.interceptors)
 	} else {
 		interceptor = UnaryInterceptorFunc(
 			func(next UnaryFunc) UnaryFunc {
@@ -34,7 +34,7 @@ func notify[P any](ctx context.Context, c *callable, method string, req *Request
 			Params:  &msgParams,
 		}
 
-		return nil, c.Stream.Send(msg)
+		return nil, c.stream.Send(msg)
 	})
 
 	req.method = method

@@ -8,18 +8,12 @@ import (
 	"strconv"
 )
 
-type callable struct {
-	Router       *router
-	Interceptors []Interceptor
-	Stream       Stream
-}
-
-func call[P any, R any](ctx context.Context, c *callable, method string, req *Request[P]) (*Response[R], error) {
-	id, inbox := c.Router.Add()
+func call[P any, R any](ctx context.Context, c *base, method string, req *Request[P]) (*Response[R], error) {
+	id, inbox := c.router.Add()
 
 	var interceptor Interceptor
-	if len(c.Interceptors) > 0 {
-		interceptor = newStack(c.Interceptors)
+	if len(c.interceptors) > 0 {
+		interceptor = newStack(c.interceptors)
 	} else {
 		interceptor = UnaryInterceptorFunc(
 			func(next UnaryFunc) UnaryFunc {
@@ -47,7 +41,7 @@ func call[P any, R any](ctx context.Context, c *callable, method string, req *Re
 			Params:  &msgParams,
 		}
 
-		if err := c.Stream.Send(msg); err != nil {
+		if err := c.stream.Send(msg); err != nil {
 			return nil, err
 		}
 

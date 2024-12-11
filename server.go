@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 )
 
@@ -66,6 +65,7 @@ func (s *UnimplementedServer) SetLogLevel(ctx context.Context, req *Request[SetL
 	return nil, fmt.Errorf("unimplemented")
 }
 
+<<<<<<< HEAD
 func process[T, V any](ctx context.Context, cfg *callable, msg *Message, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) error {
 	var interceptor Interceptor
 	if len(cfg.Interceptors) > 0 {
@@ -134,14 +134,15 @@ func process[T, V any](ctx context.Context, cfg *callable, msg *Message, method 
 	})
 }
 
+=======
+>>>>>>> e596f6c (Fix up stuff)
 type serverConfig struct {
 	interceptors []Interceptor
 }
 
 type Server struct {
-	cfg    *serverConfig
-	srv    ServerHandler
-	stream Stream
+	handler ServerHandler
+	base    *base
 }
 
 func NewServer(stream Stream, handler ServerHandler, opts ...Option) *Server {
@@ -150,62 +151,53 @@ func NewServer(stream Stream, handler ServerHandler, opts ...Option) *Server {
 		opt.applyToServer(cfg)
 	}
 	return &Server{
-		cfg:    cfg,
-		stream: stream,
-		srv:    handler,
+		handler: handler,
+		base: &base{
+			router:       newRouter(),
+			interceptors: cfg.interceptors,
+			stream:       stream,
+		},
 	}
 }
 
-func (s Server) Listen(ctx context.Context) error {
-	for {
-		msg, err := s.stream.Recv()
-
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			s.processMessage(ctx, msg)
-		}()
-	}
+func (s *Server) Listen(ctx context.Context) error {
+	return s.base.listen(ctx, s.processMessage)
 }
 
-func (s Server) processMessage(ctx context.Context, msg *Message) error {
-	if msg.Method == nil {
-		return nil
-	}
+func (s *Server) Ping(ctx context.Context, request *Request[PingRequest]) (*Response[PingResponse], error) {
+	return call[PingRequest, PingResponse](ctx, s.base, "ping", request)
+}
 
-	cfg := &callable{
-		Interceptors: s.cfg.interceptors,
-		Stream:       s.stream,
-	}
-	srv := s.srv
+func (s *Server) LogMessage(ctx context.Context, request *Request[LogMessageRequest]) error {
+	return notify[LogMessageRequest](ctx, s.base, "notifications/message", request)
+}
 
+func (s *Server) processMessage(ctx context.Context, msg *Message) error {
+	h := s.handler
 	switch m := *msg.Method; m {
 	case "initialize":
-		return process(ctx, cfg, msg, srv.Initialize)
+		return process(ctx, s.base, msg, h.Initialize)
 	case "completion/complete":
-		return process(ctx, cfg, msg, srv.Completion)
+		return process(ctx, s.base, msg, h.Completion)
 	case "tools/list":
-		return process(ctx, cfg, msg, srv.ListTools)
+		return process(ctx, s.base, msg, h.ListTools)
 	case "tools/call":
-		return process(ctx, cfg, msg, srv.CallTool)
+		return process(ctx, s.base, msg, h.CallTool)
 	case "prompts/list":
-		return process(ctx, cfg, msg, srv.ListPrompts)
+		return process(ctx, s.base, msg, h.ListPrompts)
 	case "prompts/get":
-		return process(ctx, cfg, msg, srv.GetPrompt)
+		return process(ctx, s.base, msg, h.GetPrompt)
 	case "resources/list":
-		return process(ctx, cfg, msg, srv.ListResources)
+		return process(ctx, s.base, msg, h.ListResources)
 	case "resources/read":
-		return process(ctx, cfg, msg, srv.ReadResource)
+		return process(ctx, s.base, msg, h.ReadResource)
 	case "resources/templates/list":
-		return process(ctx, cfg, msg, srv.ListResourceTemplates)
+		return process(ctx, s.base, msg, h.ListResourceTemplates)
 	case "ping":
-		return process(ctx, cfg, msg, srv.Ping)
+		return process(ctx, s.base, msg, h.Ping)
 	case "logging/setLevel":
-		return process(ctx, cfg, msg, srv.SetLogLevel)
+		return process(ctx, s.base, msg, h.SetLogLevel)
 	default:
 		return fmt.Errorf("unknown method: %s", m)
 	}
-
 }

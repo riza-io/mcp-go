@@ -229,6 +229,12 @@ type SetLogLevelRequest struct {
 type SetLogLevelResponse struct {
 }
 
+type LogMessageRequest struct {
+	Level  Level           `json:"level"`
+	Logger string          `json:"logger"`
+	Data   json.RawMessage `json:"data"`
+}
+
 type SamplingRequest struct {
 	MaxTokens int `json:"maxTokens"`
 }
