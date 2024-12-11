@@ -6,7 +6,7 @@ type Request struct {
 	ID      json.Number     `json:"id"`
 	JsonRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
+	Params  json.RawMessage `json:"params,omitempty"`
 }
 
 type Response struct {

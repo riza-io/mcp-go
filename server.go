@@ -85,8 +85,10 @@ func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Reque
 		)
 	}
 
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		return nil, err
+	if len(msg.Params) > 0 {
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return nil, err
+		}
 	}
 	req := NewRequest(params)
 	req.id = msg.ID.String()
