@@ -1,17 +1,11 @@
 package mcp
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-
-	"github.com/riza-io/mcp-go/internal/jsonrpc"
 )
 
-type Server interface {
+type ServerHandler interface {
 	Initialize(ctx context.Context, req *Request[InitializeRequest]) (*Response[InitializeResponse], error)
 	ListTools(ctx context.Context, req *Request[ListToolsRequest]) (*Response[ListToolsResponse], error)
 	CallTool(ctx context.Context, req *Request[CallToolRequest]) (*Response[CallToolResponse], error)
@@ -71,166 +65,68 @@ func (s *UnimplementedServer) SetLogLevel(ctx context.Context, req *Request[SetL
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func process[T, V any](ctx context.Context, cfg *serverConfig, msg jsonrpc.Request, params *T, method func(ctx context.Context, req *Request[T]) (*Response[V], error)) (any, error) {
-	var interceptor Interceptor
-	if len(cfg.interceptors) > 0 {
-		interceptor = newStack(cfg.interceptors)
-	} else {
-		interceptor = UnaryInterceptorFunc(
-			func(next UnaryFunc) UnaryFunc {
-				return UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {
-					return next(ctx, request)
-				})
-			},
-		)
-	}
-
-	if len(msg.Params) > 0 {
-		if err := json.Unmarshal(msg.Params, &params); err != nil {
-			return nil, err
-		}
-	}
-	req := NewRequest(params)
-	req.id = msg.ID.String()
-	req.method = msg.Method
-
-	inner := UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {
-		req := request.(*Request[T])
-		resp, rerr := method(ctx, req)
-		if rerr != nil {
-			return nil, rerr
-		}
-		resp.id = req.id
-		return resp, nil
-	})
-
-	rr, err := interceptor.WrapUnary(inner)(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := rr.(*Response[V])
-	return resp.Result, nil
-
-}
-
 type serverConfig struct {
 	interceptors []Interceptor
 }
 
-type StdioServer struct {
-	cfg *serverConfig
-	srv Server
+type Server struct {
+	handler ServerHandler
+	base    *base
 }
 
-func NewStdioServer(srv Server, opts ...Option) *StdioServer {
+func NewServer(stream Stream, handler ServerHandler, opts ...Option) *Server {
 	cfg := &serverConfig{}
 	for _, opt := range opts {
 		opt.applyToServer(cfg)
 	}
-	return &StdioServer{
-		cfg: cfg,
-		srv: srv,
+	return &Server{
+		handler: handler,
+		base: &base{
+			router:       newRouter(),
+			interceptors: cfg.interceptors,
+			stream:       stream,
+		},
 	}
 }
 
-func (s StdioServer) Listen(ctx context.Context, r io.Reader, w io.Writer) error {
-	scanner := bufio.NewScanner(r)
-
-	for scanner.Scan() {
-
-		// Recover from panics when processing a message
-		bs, err := s.processMessage(ctx, scanner.Bytes())
-		if err == nil {
-			fmt.Fprintln(w, string(bs))
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	return nil
+func (s *Server) Listen(ctx context.Context) error {
+	return s.base.listen(ctx, s.processMessage)
 }
 
-func (s StdioServer) processMessage(ctx context.Context, line []byte) ([]byte, error) {
-	cfg := s.cfg
-	srv := s.srv
+func (s *Server) Ping(ctx context.Context, request *Request[PingRequest]) (*Response[PingResponse], error) {
+	return call[PingRequest, PingResponse](ctx, s.base, "ping", request)
+}
 
-	dec := json.NewDecoder(bytes.NewReader(line))
+func (s *Server) LogMessage(ctx context.Context, request *Request[LogMessageRequest]) error {
+	return notify[LogMessageRequest](ctx, s.base, "notifications/message", request)
+}
 
-	var msg jsonrpc.Request
-	if err := dec.Decode(&msg); err != nil {
-		return nil, err
-	}
-
-	var result any
-	var err error
-	code := 9
-
-	switch msg.Method {
+func (s *Server) processMessage(ctx context.Context, msg *Message) error {
+	h := s.handler
+	switch m := *msg.Method; m {
 	case "initialize":
-		params := &InitializeRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Initialize)
+		return process(ctx, s.base, msg, h.Initialize)
 	case "completion/complete":
-		params := &CompletionRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Completion)
+		return process(ctx, s.base, msg, h.Completion)
 	case "tools/list":
-		params := &ListToolsRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListTools)
+		return process(ctx, s.base, msg, h.ListTools)
 	case "tools/call":
-		params := &CallToolRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.CallTool)
+		return process(ctx, s.base, msg, h.CallTool)
 	case "prompts/list":
-		params := &ListPromptsRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListPrompts)
+		return process(ctx, s.base, msg, h.ListPrompts)
 	case "prompts/get":
-		params := &GetPromptRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.GetPrompt)
+		return process(ctx, s.base, msg, h.GetPrompt)
 	case "resources/list":
-		params := &ListResourcesRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListResources)
+		return process(ctx, s.base, msg, h.ListResources)
 	case "resources/read":
-		params := &ReadResourceRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ReadResource)
+		return process(ctx, s.base, msg, h.ReadResource)
 	case "resources/templates/list":
-		params := &ListResourceTemplatesRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
+		return process(ctx, s.base, msg, h.ListResourceTemplates)
 	case "ping":
-		params := &PingRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.Ping)
+		return process(ctx, s.base, msg, h.Ping)
 	case "logging/setLevel":
-		params := &SetLogLevelRequest{}
-		result, err = process(ctx, cfg, msg, params, srv.SetLogLevel)
+		return process(ctx, s.base, msg, h.SetLogLevel)
 	default:
-		if msg.ID == "" {
-			// Ignore notifications
-			return nil, nil
-		}
-		code = -32601
-		err = fmt.Errorf("unknown method: %s", msg.Method)
+		return fmt.Errorf("unknown method: %s", m)
 	}
-
-	var resp jsonrpc.Response
-	if err != nil {
-		resp = jsonrpc.Response{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
-			Error: &jsonrpc.ErrorDetail{
-				Code:    code,
-				Message: err.Error(),
-			},
-		}
-	} else {
-		rawresult, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-		resp = jsonrpc.Response{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
-			Result:  rawresult,
-		}
-	}
-
-	return json.Marshal(resp)
 }

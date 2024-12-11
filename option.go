@@ -6,7 +6,7 @@ type Option interface {
 }
 
 type ClientOption interface {
-	applyToClient(c *StdioClient)
+	applyToClient(c *Client)
 }
 
 type ServerOption interface {
@@ -21,7 +21,7 @@ type interceptorsOption struct {
 	Interceptors []Interceptor
 }
 
-func (o *interceptorsOption) applyToClient(c *StdioClient) {
+func (o *interceptorsOption) applyToClient(c *Client) {
 	c.interceptors = o.Interceptors
 }
 

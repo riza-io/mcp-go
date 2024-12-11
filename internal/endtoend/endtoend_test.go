@@ -2,14 +2,20 @@ package endtoend
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"testing"
 
 	"github.com/riza-io/mcp-go"
+	"github.com/riza-io/mcp-go/stdio"
 )
 
 type server struct {
 	mcp.UnimplementedServer
+}
+
+type client struct {
+	mcp.UnimplementedClient
 }
 
 func (s *server) Initialize(ctx context.Context, req *mcp.Request[mcp.InitializeRequest]) (*mcp.Response[mcp.InitializeResponse], error) {
@@ -44,17 +50,24 @@ func TestEndToEnd(t *testing.T) {
 	stdinr, stdinw := io.Pipe()
 	stdoutr, stdoutw := io.Pipe()
 
-	client := mcp.NewStdioClient(stdinr, stdoutw)
-	srv := mcp.NewStdioServer(&server{}, mcp.WithInterceptors(loggingInterceptor))
+	c := mcp.NewClient(stdio.NewStream(stdinr, stdoutw), &client{},
+		mcp.WithInterceptors(loggingInterceptor))
+	s := mcp.NewServer(stdio.NewStream(stdoutr, stdinw), &server{})
 
 	go func() {
-		if err := srv.Listen(ctx, stdoutr, stdinw); err != nil {
+		if err := s.Listen(ctx); err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+	}()
+
+	go func() {
+		if err := c.Listen(ctx); err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
 	}()
 
 	t.Run("initialize", func(t *testing.T) {
-		resp, err := client.Initialize(ctx, mcp.NewRequest(&mcp.InitializeRequest{
+		resp, err := c.Initialize(ctx, mcp.NewRequest(&mcp.InitializeRequest{
 			ProtocolVersion: "1.0.0",
 		}))
 		if err != nil {
@@ -65,15 +78,33 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("ping", func(t *testing.T) {
-		_, err := client.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
+	t.Run("client/ping", func(t *testing.T) {
+		_, err := c.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
 		if err != nil {
 			t.Fatalf("failed to ping server: %v", err)
 		}
 	})
 
+	t.Run("server/ping", func(t *testing.T) {
+		_, err := s.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
+		if err != nil {
+			t.Fatalf("failed to ping client: %v", err)
+		}
+	})
+
+	t.Run("server/sendLogMessage", func(t *testing.T) {
+		err := s.LogMessage(ctx, mcp.NewRequest(&mcp.LogMessageRequest{
+			Level:  mcp.LevelInfo,
+			Logger: "test",
+			Data:   json.RawMessage(`{"message": "test"}`),
+		}))
+		if err != nil {
+			t.Fatalf("failed to send log message: %v", err)
+		}
+	})
+
 	t.Run("set log level", func(t *testing.T) {
-		_, err := client.SetLogLevel(ctx, mcp.NewRequest(&mcp.SetLogLevelRequest{
+		_, err := c.SetLogLevel(ctx, mcp.NewRequest(&mcp.SetLogLevelRequest{
 			Level: mcp.LevelInfo,
 		}))
 		if err != nil {
