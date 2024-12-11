@@ -2,11 +2,11 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/riza-io/mcp-go/internal/jsonrpc"
 )
@@ -128,95 +128,99 @@ func NewStdioServer(srv Server, opts ...Option) *StdioServer {
 }
 
 func (s StdioServer) Listen(ctx context.Context, r io.Reader, w io.Writer) error {
-	cfg := s.cfg
-	srv := s.srv
-
 	scanner := bufio.NewScanner(r)
+
 	for scanner.Scan() {
-		line := scanner.Text()
-		dec := json.NewDecoder(strings.NewReader(line))
 
-		var msg jsonrpc.Request
-		if err := dec.Decode(&msg); err != nil {
-			continue
+		// Recover from panics when processing a message
+		bs, err := s.processMessage(ctx, scanner.Bytes())
+		if err == nil {
+			fmt.Fprintln(w, string(bs))
 		}
-
-		var result any
-		var err error
-		code := 9
-
-		switch msg.Method {
-		case "initialize":
-			params := &InitializeRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.Initialize)
-		case "completion/complete":
-			params := &CompletionRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.Completion)
-		case "tools/list":
-			params := &ListToolsRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.ListTools)
-		case "tools/call":
-			params := &CallToolRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.CallTool)
-		case "prompts/list":
-			params := &ListPromptsRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.ListPrompts)
-		case "prompts/get":
-			params := &GetPromptRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.GetPrompt)
-		case "resources/list":
-			params := &ListResourcesRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.ListResources)
-		case "resources/read":
-			params := &ReadResourceRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.ReadResource)
-		case "resources/templates/list":
-			params := &ListResourceTemplatesRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
-		case "ping":
-			params := &PingRequest{}
-			result, err = process(ctx, cfg, msg, params, srv.Ping)
-		default:
-			if msg.ID == "" {
-				// Ignore notifications
-				continue
-			}
-			code = -32601
-			err = fmt.Errorf("unknown method: %s", msg.Method)
-		}
-
-		var resp jsonrpc.Response
-		if err != nil {
-			resp = jsonrpc.Response{
-				ID:      msg.ID,
-				JsonRPC: msg.JsonRPC,
-				Error: &jsonrpc.ErrorDetail{
-					Code:    code,
-					Message: err.Error(),
-				},
-			}
-		} else {
-			rawresult, err := json.Marshal(result)
-			if err != nil {
-				return err
-			}
-			resp = jsonrpc.Response{
-				ID:      msg.ID,
-				JsonRPC: msg.JsonRPC,
-				Result:  rawresult,
-			}
-		}
-
-		bs, err := json.Marshal(resp)
-		if err != nil {
-			return err
-		}
-
-		fmt.Fprintln(w, string(bs))
 	}
 
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s StdioServer) processMessage(ctx context.Context, line []byte) ([]byte, error) {
+	cfg := s.cfg
+	srv := s.srv
+
+	dec := json.NewDecoder(bytes.NewReader(line))
+
+	var msg jsonrpc.Request
+	if err := dec.Decode(&msg); err != nil {
+		return nil, err
+	}
+
+	var result any
+	var err error
+	code := 9
+
+	switch msg.Method {
+	case "initialize":
+		params := &InitializeRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.Initialize)
+	case "completion/complete":
+		params := &CompletionRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.Completion)
+	case "tools/list":
+		params := &ListToolsRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.ListTools)
+	case "tools/call":
+		params := &CallToolRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.CallTool)
+	case "prompts/list":
+		params := &ListPromptsRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.ListPrompts)
+	case "prompts/get":
+		params := &GetPromptRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.GetPrompt)
+	case "resources/list":
+		params := &ListResourcesRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.ListResources)
+	case "resources/read":
+		params := &ReadResourceRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.ReadResource)
+	case "resources/templates/list":
+		params := &ListResourceTemplatesRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.ListResourceTemplates)
+	case "ping":
+		params := &PingRequest{}
+		result, err = process(ctx, cfg, msg, params, srv.Ping)
+	default:
+		if msg.ID == "" {
+			// Ignore notifications
+			return nil, nil
+		}
+		code = -32601
+		err = fmt.Errorf("unknown method: %s", msg.Method)
+	}
+
+	var resp jsonrpc.Response
+	if err != nil {
+		resp = jsonrpc.Response{
+			ID:      msg.ID,
+			JsonRPC: msg.JsonRPC,
+			Error: &jsonrpc.ErrorDetail{
+				Code:    code,
+				Message: err.Error(),
+			},
+		}
+	} else {
+		rawresult, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		resp = jsonrpc.Response{
+			ID:      msg.ID,
+			JsonRPC: msg.JsonRPC,
+			Result:  rawresult,
+		}
+	}
+
+	return json.Marshal(resp)
 }
