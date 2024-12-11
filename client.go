@@ -24,6 +24,7 @@ type Client interface {
 	ListResourceTemplates(ctx context.Context, req *Request[ListResourceTemplatesRequest]) (*Response[ListResourceTemplatesResponse], error)
 	Completion(ctx context.Context, req *Request[CompletionRequest]) (*Response[CompletionResponse], error)
 	Ping(ctx context.Context, req *Request[PingRequest]) (*Response[PingResponse], error)
+	SetLogLevel(ctx context.Context, req *Request[SetLogLevelRequest]) (*Response[SetLogLevelResponse], error)
 }
 
 type StdioClient struct {
@@ -170,4 +171,8 @@ func (c *StdioClient) Completion(ctx context.Context, request *Request[Completio
 
 func (c *StdioClient) Ping(ctx context.Context, request *Request[PingRequest]) (*Response[PingResponse], error) {
 	return clientCallUnary[PingRequest, PingResponse](ctx, c, "ping", request)
+}
+
+func (c *StdioClient) SetLogLevel(ctx context.Context, request *Request[SetLogLevelRequest]) (*Response[SetLogLevelResponse], error) {
+	return clientCallUnary[SetLogLevelRequest, SetLogLevelResponse](ctx, c, "logging/setLevel", request)
 }
