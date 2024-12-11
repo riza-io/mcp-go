@@ -208,3 +208,23 @@ type PingRequest struct {
 
 type PingResponse struct {
 }
+
+type Level string
+
+const (
+	LevelDebug     Level = "debug"
+	LevelAlert     Level = "alert"
+	LevelCritical  Level = "critical"
+	LevelEmergency Level = "emergency"
+	LevelError     Level = "error"
+	LevelInfo      Level = "info"
+	LevelNotice    Level = "notice"
+	LevelWarning   Level = "warning"
+)
+
+type SetLogLevelRequest struct {
+	Level Level `json:"level"`
+}
+
+type SetLogLevelResponse struct {
+}

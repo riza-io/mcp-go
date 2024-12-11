@@ -18,6 +18,10 @@ func (s *server) Initialize(ctx context.Context, req *mcp.Request[mcp.Initialize
 	}), nil
 }
 
+func (s *server) SetLogLevel(ctx context.Context, req *mcp.Request[mcp.SetLogLevelRequest]) (*mcp.Response[mcp.SetLogLevelResponse], error) {
+	return mcp.NewResponse(&mcp.SetLogLevelResponse{}), nil
+}
+
 func TestEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
@@ -49,7 +53,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}()
 
-	{
+	t.Run("initialize", func(t *testing.T) {
 		resp, err := client.Initialize(ctx, mcp.NewRequest(&mcp.InitializeRequest{
 			ProtocolVersion: "1.0.0",
 		}))
@@ -59,12 +63,21 @@ func TestEndToEnd(t *testing.T) {
 		if resp.Result.ProtocolVersion != "1.0.0" {
 			t.Fatalf("expected protocol version 1.0.0, got %s", resp.Result.ProtocolVersion)
 		}
-	}
+	})
 
-	{
+	t.Run("ping", func(t *testing.T) {
 		_, err := client.Ping(ctx, mcp.NewRequest(&mcp.PingRequest{}))
 		if err != nil {
 			t.Fatalf("failed to ping server: %v", err)
 		}
-	}
+	})
+
+	t.Run("set log level", func(t *testing.T) {
+		_, err := client.SetLogLevel(ctx, mcp.NewRequest(&mcp.SetLogLevelRequest{
+			Level: mcp.LevelInfo,
+		}))
+		if err != nil {
+			t.Fatalf("failed to set log level: %v", err)
+		}
+	})
 }
