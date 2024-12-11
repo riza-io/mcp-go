@@ -29,9 +29,13 @@ func process[T, V any](ctx context.Context, cfg *base, msg *Message, method func
 	}
 
 	var params T
-	if err := json.Unmarshal(*msg.Params, &params); err != nil {
-		return err
+
+	if msg.Params != nil && len(*msg.Params) > 0 {
+		if err := json.Unmarshal(*msg.Params, &params); err != nil {
+			return err
+		}
 	}
+
 	req := NewRequest(&params)
 	if msg.ID != nil {
 		req.id = msg.ID.String()
