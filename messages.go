@@ -202,3 +202,9 @@ type CompletionResult struct {
 	HasMore bool     `json:"hasMore"`
 	Total   int      `json:"total"`
 }
+
+type PingRequest struct {
+}
+
+type PingResponse struct {
+}
