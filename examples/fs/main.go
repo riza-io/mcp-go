@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/riza-io/mcp-go"
+	"github.com/riza-io/mcp-go/stdio"
 )
 
 type FSServer struct {
@@ -73,11 +74,11 @@ func main() {
 		root = "/"
 	}
 
-	server := mcp.NewStdioServer(&FSServer{
+	server := mcp.NewServer(stdio.NewStream(os.Stdin, os.Stdout), &FSServer{
 		fs: os.DirFS(root),
 	})
 
-	if err := server.Listen(context.Background(), os.Stdin, os.Stdout); err != nil {
+	if err := server.Listen(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 }

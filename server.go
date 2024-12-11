@@ -181,7 +181,7 @@ func (s Server) processMessage(ctx context.Context, msg *Message) error {
 	}
 	srv := s.srv
 
-	switch *msg.Method {
+	switch m := *msg.Method; m {
 	case "initialize":
 		return process(ctx, cfg, msg, srv.Initialize)
 	case "completion/complete":
@@ -205,7 +205,7 @@ func (s Server) processMessage(ctx context.Context, msg *Message) error {
 	case "logging/setLevel":
 		return process(ctx, cfg, msg, srv.SetLogLevel)
 	default:
-		return fmt.Errorf("unknown method: %s", msg.Method)
+		return fmt.Errorf("unknown method: %s", m)
 	}
 
 }

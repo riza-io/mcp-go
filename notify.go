@@ -25,12 +25,10 @@ func notify[P any](ctx context.Context, c *callable, method string, req *Request
 			return nil, err
 		}
 
-		msgID := json.Number(request.ID())
 		msgVersion := "2.0"
 		msgParams := json.RawMessage(rawmsg)
 
 		msg := &Message{
-			ID:      &msgID,
 			JsonRPC: &msgVersion,
 			Method:  &method,
 			Params:  &msgParams,
