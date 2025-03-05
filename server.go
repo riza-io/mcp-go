@@ -101,6 +101,18 @@ func (s *Server) LogMessage(ctx context.Context, request *Request[LogMessageRequ
 	return notify[LogMessageRequest](ctx, s.base, "notifications/message", request)
 }
 
+func (s *Server) ToolsListChanged(ctx context.Context) error {
+	return notify[emptyRequest](ctx, s.base, "notifications/tools/list_changed", NewRequest(&emptyRequest{}))
+}
+
+func (s *Server) PromptsListChanged(ctx context.Context) error {
+	return notify[emptyRequest](ctx, s.base, "notifications/prompts/list_changed", NewRequest(&emptyRequest{}))
+}
+
+func (s *Server) ResourcesListChanged(ctx context.Context) error {
+	return notify[emptyRequest](ctx, s.base, "notifications/resources/list_changed", NewRequest(&emptyRequest{}))
+}
+
 func (s *Server) processMessage(ctx context.Context, msg *Message) error {
 	h := s.handler
 	switch m := *msg.Method; m {
