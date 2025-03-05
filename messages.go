@@ -242,3 +242,6 @@ type SamplingRequest struct {
 type SamplingResponse struct {
 	Role string `json:"role"`
 }
+
+type emptyRequest struct {
+}
