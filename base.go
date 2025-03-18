@@ -17,6 +17,9 @@ func (b *base) listen(ctx context.Context, handler func(ctx context.Context, msg
 		if err != nil {
 			return err
 		}
+		if msg == nil {
+			continue
+		}
 		if msg.Method != nil {
 			go func() {
 				handler(ctx, msg)
