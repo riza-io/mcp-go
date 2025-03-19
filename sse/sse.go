@@ -39,6 +39,10 @@ func NewStream(mux *http.ServeMux, sseRoute, messagesRoute string) *Stream {
 	}
 
 	mux.HandleFunc("POST "+messagesRoute, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("session_id") == "" {
+			http.Error(w, "session_id is required", http.StatusBadRequest)
+			return
+		}
 		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -46,17 +50,21 @@ func NewStream(mux *http.ServeMux, sseRoute, messagesRoute string) *Stream {
 			return
 		}
 
-		sessionID := r.FormValue("session_id")
-
 		var msg mcp.Message
 		if err := json.Unmarshal(body, &msg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		msg.Metadata = map[string]string{
-			"session": sessionID,
+		metadata := make(map[string]string)
+		for key, values := range r.URL.Query() {
+			// Always pick the last value
+			for _, value := range values {
+				metadata[key] = value
+			}
 		}
+
+		msg.Metadata = metadata
 
 		go func() {
 			s.in <- &msg
@@ -88,8 +96,10 @@ func NewStream(mux *http.ServeMux, sseRoute, messagesRoute string) *Stream {
 		}
 		s.mu.Unlock()
 
-		session := messagesRoute + "?session_id=" + id
-		fmt.Println(session)
+		vals := r.URL.Query()
+		vals.Add("session_id", id)
+
+		session := messagesRoute + "?" + vals.Encode()
 
 		writeEvent(w, "1", "endpoint", session)
 		flusher.Flush()
@@ -116,7 +126,7 @@ func (s *Stream) Send(msg *mcp.Message) error {
 	if msg.Metadata == nil {
 		return fmt.Errorf("metadata is nil")
 	}
-	sessionID := msg.Metadata["session"]
+	sessionID := msg.Metadata["session_id"]
 	if sessionID == "" {
 		return fmt.Errorf("session id is empty")
 	}
