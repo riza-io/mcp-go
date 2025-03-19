@@ -122,7 +122,7 @@ func (s *Stream) Send(msg *mcp.Message) error {
 	}
 	s.mu.RLock()
 	session, ok := s.sessions[sessionID]
-	defer s.mu.RUnlock()
+	s.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("session not found")
 	}
