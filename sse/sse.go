@@ -27,7 +27,7 @@ type Stream struct {
 }
 
 func writeEvent(w http.ResponseWriter, id string, event string, data string) {
-	fmt.Fprintf(w, "id: %d\n", id)
+	fmt.Fprintf(w, "id: %s\n", id)
 	fmt.Fprintf(w, "event: %s\n", event)
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
