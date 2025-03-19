@@ -2,21 +2,20 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
-	"os"
+	"net/http"
 
 	"github.com/riza-io/mcp-go"
-	"github.com/riza-io/mcp-go/stdio"
+	"github.com/riza-io/mcp-go/sse"
 )
 
 type WeatherServer struct {
-	key         string
-	defaultCity string
-
 	mcp.UnimplementedServer
 }
 
 func (s *WeatherServer) Initialize(ctx context.Context, req *mcp.Request[mcp.InitializeRequest]) (*mcp.Response[mcp.InitializeResponse], error) {
+	fmt.Println("Initialize", req.Params.ProtocolVersion)
 	return mcp.NewResponse(&mcp.InitializeResponse{
 		ProtocolVersion: req.Params.ProtocolVersion,
 		Capabilities: mcp.ServerCapabilities{
@@ -29,14 +28,15 @@ func (s *WeatherServer) Initialize(ctx context.Context, req *mcp.Request[mcp.Ini
 func main() {
 	ctx := context.Background()
 
-	if os.Getenv("OPENWEATHER_API_KEY") == "" {
-		log.Fatal("OPENWEATHER_API_KEY environment variable required")
-	}
+	mux := http.NewServeMux()
 
-	server := mcp.NewServer(stdio.NewStream(os.Stdin, os.Stdout), &WeatherServer{
-		defaultCity: "London",
-		key:         os.Getenv("OPENWEATHER_API_KEY"),
-	})
+	server := mcp.NewServer(sse.NewStream(mux, "/sse", "/messages"), &WeatherServer{})
+
+	go func() {
+		if err := http.ListenAndServe(":3009", mux); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	if err := server.Listen(ctx); err != nil {
 		log.Fatal(err)

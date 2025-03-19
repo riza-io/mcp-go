@@ -2,112 +2,75 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-	"time"
 )
 
-type Weather struct {
-	Temperature float64   `json:"temperature"`
-	Conditions  string    `json:"conditions"`
-	Humidity    float64   `json:"humidity"`
-	WindSpeed   float64   `json:"wind_speed"`
-	Timestamp   time.Time `json:"timestamp"`
-}
-
-type weatherResponse struct {
-	Main struct {
-		Temp     float64 `json:"temp"`
-		Humidity float64 `json:"humidity"`
-	} `json:"main"`
-	Wind struct {
-		Speed float64 `json:"speed"`
-	} `json:"wind"`
-	Weather []struct {
-		Description string `json:"description"`
-	} `json:"weather"`
-}
-
-func (s *WeatherServer) fetchWeather(city string) (*Weather, error) {
-	q := url.Values{}
-	q.Set("q", city)
-	q.Set("appid", s.key)
-	q.Set("units", "metric")
-
-	uri := "http://api.openweathermap.org/data/2.5/weather?" + q.Encode()
-	resp, err := http.Get(uri)
+func fetch(url string) (*json.RawMessage, error) {
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", "mcp-go-weather/1.0")
+	req.Header.Set("Accept", "application/geo+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("status code: %d", resp.StatusCode)
+	}
 	defer resp.Body.Close()
-
-	var data weatherResponse
+	var data json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, err
 	}
+	return &data, nil
+}
 
-	return &Weather{
-		Temperature: data.Main.Temp,
-		Conditions:  data.Weather[0].Description,
-		Humidity:    data.Main.Humidity,
-		WindSpeed:   data.Wind.Speed,
-		Timestamp:   time.Now(),
-	}, nil
+type Points struct {
+	Properties struct {
+		Forecast string `json:"forecast"`
+	} `json:"properties"`
+}
+
+func fetchPoints(lat, lon float64) (*Points, error) {
+	url := fmt.Sprintf("https://api.weather.gov/points/%f,%f", lat, lon)
+	data, err := fetch(url)
+	if err != nil {
+		return nil, err
+	}
+	var points Points
+	if err := json.Unmarshal(*data, &points); err != nil {
+		return nil, err
+	}
+	return &points, nil
 }
 
 type Forecast struct {
-	Date        string  `json:"date"`
-	Temperature float64 `json:"temperature"`
-	Conditions  string  `json:"conditions"`
+	Properties struct {
+		Periods []Period `json:"periods"`
+	} `json:"properties"`
 }
 
-type forecastResponse struct {
-	List []struct {
-		DatetimeText string `json:"dt_txt"`
-		Main         struct {
-			Temp float64 `json:"temp"`
-		} `json:"main"`
-		Weather []struct {
-			Description string `json:"description"`
-		} `json:"weather"`
-	} `json:"list"`
+type Period struct {
+	Name             string  `json:"name"`
+	Temp             float64 `json:"temperature"`
+	TempUnit         string  `json:"temperatureUnit"`
+	WindSpeed        string  `json:"windSpeed"`
+	WindDirection    string  `json:"windDirection"`
+	DetailedForecast string  `json:"detailedForecast"`
 }
 
-func (s *WeatherServer) fetchForecast(city string, days int) ([]Forecast, error) {
-	q := url.Values{}
-	q.Set("q", city)
-	q.Set("cnt", strconv.Itoa(days*8))
-	q.Set("appid", s.key)
-	q.Set("units", "metric")
-
-	uri := "http://api.openweathermap.org/data/2.5/forecast?" + q.Encode()
-	resp, err := http.Get(uri)
+func fetchForecast(url string) (*Forecast, error) {
+	data, err := fetch(url)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	var data forecastResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	fmt.Println("forecast", string(*data))
+	var forecast Forecast
+	if err := json.Unmarshal(*data, &forecast); err != nil {
 		return nil, err
 	}
-
-	forecasts := []Forecast{}
-	for i, day_data := range data.List {
-		if i%8 != 0 {
-			continue
-		}
-
-		date, _, _ := strings.Cut(day_data.DatetimeText, " ")
-
-		forecasts = append(forecasts, Forecast{
-			Date:        date,
-			Temperature: day_data.Main.Temp,
-			Conditions:  day_data.Weather[0].Description,
-		})
-	}
-
-	return forecasts, nil
+	return &forecast, nil
 }

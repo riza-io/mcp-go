@@ -10,23 +10,19 @@ import (
 const getForecastSchema = `{
   "type": "object",
   "properties": {
-    "city": {
-      "type": "string",
-      "description": "City name"
+    "latitude": {
+      "type": "number"
     },
-    "days": {
-      "type": "number",
-      "description": "Number of days (1-5)",
-      "minimum": 1,
-      "maximum": 5
+    "longitude": {
+      "type": "number"
     }
   },
-  "required": ["city"]
+  "required": ["latitude", "longitude"]
 }`
 
 type GetForecastArguments struct {
-	City string `json:"city"`
-	Days int    `json:"days"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
 }
 
 func (s *WeatherServer) ListTools(ctx context.Context, req *mcp.Request[mcp.ListToolsRequest]) (*mcp.Response[mcp.ListToolsResponse], error) {
@@ -34,7 +30,7 @@ func (s *WeatherServer) ListTools(ctx context.Context, req *mcp.Request[mcp.List
 		Tools: []mcp.Tool{
 			{
 				Name:        "get_forecast",
-				Description: "Get weather forecast for a city",
+				Description: "Get weather forecast for a location.",
 				InputSchema: json.RawMessage([]byte(getForecastSchema)),
 			},
 		},
@@ -47,22 +43,25 @@ func (s *WeatherServer) CallTool(ctx context.Context, req *mcp.Request[mcp.CallT
 		return nil, err
 	}
 
-	forecasts, err := s.fetchForecast(args.City, args.Days)
+	points, err := fetchPoints(args.Latitude, args.Longitude)
 	if err != nil {
 		return nil, err
 	}
 
-	text, err := json.MarshalIndent(forecasts, "", "  ")
+	forecast, err := fetchForecast(points.Properties.Forecast)
 	if err != nil {
 		return nil, err
+	}
+
+	content := []mcp.Content{}
+	for _, period := range forecast.Properties.Periods {
+		content = append(content, mcp.Content{
+			Type: "text",
+			Text: period.DetailedForecast,
+		})
 	}
 
 	return mcp.NewResponse(&mcp.CallToolResponse{
-		Content: []mcp.Content{
-			{
-				Type: "text",
-				Text: string(text),
-			},
-		},
+		Content: content,
 	}), nil
 }
