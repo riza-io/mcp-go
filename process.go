@@ -40,6 +40,9 @@ func process[T, V any](ctx context.Context, cfg *base, msg *Message, method func
 	if msg.ID != nil {
 		req.id = msg.ID.String()
 	}
+	if msg.Metadata != nil {
+		req.metadata = msg.Metadata
+	}
 	req.method = *msg.Method
 
 	inner := UnaryFunc(func(ctx context.Context, request AnyRequest) (AnyResponse, error) {

@@ -3,12 +3,17 @@ package mcp
 type Request[T any] struct {
 	Params *T
 
-	method string
-	id     string
+	method   string
+	id       string
+	metadata map[string]string
 }
 
 func (r *Request[T]) ID() string {
 	return r.id
+}
+
+func (r *Request[T]) Metadata() map[string]string {
+	return r.metadata
 }
 
 func NewRequest[T any](params *T) *Request[T] {
