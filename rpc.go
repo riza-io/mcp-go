@@ -14,6 +14,10 @@ type Message struct {
 	Params  *json.RawMessage `json:"params,omitempty"`
 	Result  *json.RawMessage `json:"result,omitempty"`
 	Error   *ErrorDetail     `json:"error,omitempty"`
+
+	// Metadata is used to store additional information about the message for
+	// processing by the client or server. It is never sent across the wire.
+	Metadata map[string]string
 }
 
 type ErrorDetail struct {

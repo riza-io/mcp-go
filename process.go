@@ -61,8 +61,9 @@ func process[T, V any](ctx context.Context, cfg *base, msg *Message, method func
 
 	if err != nil {
 		return cfg.stream.Send(&Message{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
+			Metadata: msg.Metadata,
+			ID:       msg.ID,
+			JsonRPC:  msg.JsonRPC,
 			Error: &ErrorDetail{
 				Code:    9,
 				Message: err.Error(),
@@ -75,8 +76,9 @@ func process[T, V any](ctx context.Context, cfg *base, msg *Message, method func
 	rawresult, err := json.Marshal(resp.Result)
 	if err != nil {
 		return cfg.stream.Send(&Message{
-			ID:      msg.ID,
-			JsonRPC: msg.JsonRPC,
+			Metadata: msg.Metadata,
+			ID:       msg.ID,
+			JsonRPC:  msg.JsonRPC,
 			Error: &ErrorDetail{
 				Code:    9,
 				Message: err.Error(),
@@ -86,8 +88,9 @@ func process[T, V any](ctx context.Context, cfg *base, msg *Message, method func
 
 	rawmsg := json.RawMessage(rawresult)
 	return cfg.stream.Send(&Message{
-		ID:      msg.ID,
-		JsonRPC: msg.JsonRPC,
-		Result:  &rawmsg,
+		Metadata: msg.Metadata,
+		ID:       msg.ID,
+		JsonRPC:  msg.JsonRPC,
+		Result:   &rawmsg,
 	})
 }
