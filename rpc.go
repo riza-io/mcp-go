@@ -17,7 +17,7 @@ type Message struct {
 
 	// Metadata is used to store additional information about the message for
 	// processing by the client or server. It is never sent across the wire.
-	Metadata map[string]string
+	Metadata map[string]string `json:"-"`
 }
 
 type ErrorDetail struct {
