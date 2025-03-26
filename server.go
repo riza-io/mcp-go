@@ -5,6 +5,23 @@ import (
 	"fmt"
 )
 
+type Method string
+
+const (
+	MethodInitialize            Method = "initialize"
+	MethodCompletion            Method = "completion/complete"
+	MethodListTools             Method = "tools/list"
+	MethodCallTool              Method = "tools/call"
+	MethodListPrompts           Method = "prompts/list"
+	MethodGetPrompt             Method = "prompts/get"
+	MethodListResources         Method = "resources/list"
+	MethodReadResource          Method = "resources/read"
+	MethodListResourceTemplates Method = "resources/templates/list"
+	MethodPing                  Method = "ping"
+	MethodSetLogLevel           Method = "logging/setLevel"
+	MethodNotificationsMessage  Method = "notifications/message"
+)
+
 type ServerHandler interface {
 	Initialize(ctx context.Context, req *Request[InitializeRequest]) (*Response[InitializeResponse], error)
 	ListTools(ctx context.Context, req *Request[ListToolsRequest]) (*Response[ListToolsResponse], error)
@@ -114,31 +131,12 @@ func (s *Server) ResourcesListChanged(ctx context.Context) error {
 }
 
 func (s *Server) processMessage(ctx context.Context, msg *Message) error {
-	h := s.handler
-	switch m := *msg.Method; m {
-	case "initialize":
-		return process(ctx, s.base, msg, h.Initialize)
-	case "completion/complete":
-		return process(ctx, s.base, msg, h.Completion)
-	case "tools/list":
-		return process(ctx, s.base, msg, h.ListTools)
-	case "tools/call":
-		return process(ctx, s.base, msg, h.CallTool)
-	case "prompts/list":
-		return process(ctx, s.base, msg, h.ListPrompts)
-	case "prompts/get":
-		return process(ctx, s.base, msg, h.GetPrompt)
-	case "resources/list":
-		return process(ctx, s.base, msg, h.ListResources)
-	case "resources/read":
-		return process(ctx, s.base, msg, h.ReadResource)
-	case "resources/templates/list":
-		return process(ctx, s.base, msg, h.ListResourceTemplates)
-	case "ping":
-		return process(ctx, s.base, msg, h.Ping)
-	case "logging/setLevel":
-		return process(ctx, s.base, msg, h.SetLogLevel)
-	default:
-		return fmt.Errorf("unknown method: %s", m)
+	rr, err := s.ServeMCP(ctx, msg)
+	if err != nil {
+		return err
 	}
+	if rr == nil {
+		return nil
+	}
+	return s.base.stream.Send(rr)
 }

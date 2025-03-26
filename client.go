@@ -51,14 +51,25 @@ func (c *Client) Listen(ctx context.Context) error {
 }
 
 func (c *Client) processMessage(ctx context.Context, msg *Message) error {
-	srv := c.handler
-	switch m := *msg.Method; m {
-	case "ping":
-		return process(ctx, c.base, msg, srv.Ping)
-	case "notifications/message":
-		return process(ctx, c.base, msg, noop(srv.LogMessage))
+	rr, err := c.ServeMCP(ctx, msg)
+	if err != nil {
+		return err
+	}
+	if rr == nil {
+		return nil
+	}
+	return c.base.stream.Send(rr)
+}
+
+func (c *Client) ServeMCP(ctx context.Context, msg *Message) (*Message, error) {
+	h := c.handler
+	switch m := Method(*msg.Method); m {
+	case MethodPing:
+		return serveMCP(ctx, c.base, msg, h.Ping)
+	case MethodNotificationsMessage:
+		return serveMCP(ctx, c.base, msg, noop(h.LogMessage))
 	default:
-		return fmt.Errorf("unknown method: %s", m)
+		return nil, fmt.Errorf("unknown method: %s", m)
 	}
 }
 
