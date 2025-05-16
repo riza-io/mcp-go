@@ -45,6 +45,7 @@ type AnyRequest interface {
 	Any() any
 	ID() string
 	Method() string
+	Metadata() map[string]string
 	internalOnly()
 }
 
