@@ -57,6 +57,12 @@ func NewStream(mux *http.ServeMux, sseRoute, messagesRoute string) *Stream {
 		}
 
 		metadata := make(map[string]string)
+		for key, values := range r.Header {
+			// Always pick the last value
+			for _, value := range values {
+				metadata[key] = value
+			}
+		}
 		for key, values := range r.URL.Query() {
 			// Always pick the last value
 			for _, value := range values {
